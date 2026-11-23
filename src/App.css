@@ -1,0 +1,344 @@
+@import "dockview-react/dist/styles/dockview.css";
+
+:root {
+  --bg: #0b0e14;
+  --bg-sidebar: #10141c;
+  --bg-hover: #1a2030;
+  --bg-active: #22304a;
+  --border: #1f2633;
+  --text: #d6dbe4;
+  --text-muted: #7f8898;
+  --accent: #5b8def;
+  --danger: #e5696b;
+
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif;
+  font-size: 13px;
+  color: var(--text);
+  background: var(--bg);
+  color-scheme: dark;
+}
+
+/* pdf.js sizes pages assuming content-box; border-box there squeezes the
+   canvas so it no longer lines up with the text layer. */
+*:where(:not(.pdfViewer, .pdfViewer *)) {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+}
+
+button {
+  font: inherit;
+  color: var(--text);
+  background: var(--bg-hover);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 4px 10px;
+  cursor: pointer;
+}
+button:hover:not(:disabled) {
+  background: var(--bg-active);
+}
+
+.app {
+  display: flex;
+  height: 100%;
+}
+
+/* Sidebar */
+.sidebar {
+  width: 260px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-sidebar);
+  border-right: 1px solid var(--border);
+}
+.sidebar-header {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 8px 8px 12px;
+  border-bottom: 1px solid var(--border);
+}
+.workspace-name {
+  flex: 1;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.icon-button {
+  background: none;
+  border: none;
+  padding: 2px 6px;
+  color: var(--text-muted);
+}
+.icon-button:hover {
+  color: var(--text);
+}
+.sidebar-error {
+  padding: 8px 12px;
+  color: var(--danger);
+  word-break: break-word;
+}
+.sidebar-empty {
+  padding: 16px 12px;
+}
+
+/* File tree */
+.tree,
+.tree ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.tree {
+  flex: 1;
+  overflow: auto;
+  padding: 4px 0;
+}
+.tree-row {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  padding: 3px 8px;
+  background: none;
+  border: none;
+  border-radius: 0;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tree-row:hover:not(:disabled) {
+  background: var(--bg-hover);
+}
+.tree-row.active {
+  background: var(--bg-active);
+}
+.tree-row:disabled {
+  color: var(--text-muted);
+  cursor: default;
+}
+.tree-caret {
+  display: inline-block;
+  width: 14px;
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+
+/* Dock area and panes */
+.dock {
+  flex: 1;
+  min-width: 0;
+}
+.pane {
+  height: 100%;
+  overflow: auto;
+  background: var(--bg);
+}
+.pane-message {
+  padding: 24px;
+}
+.pane-message.error {
+  color: var(--danger);
+}
+.muted {
+  color: var(--text-muted);
+}
+.text-view {
+  margin: 0;
+  padding: 16px 24px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12.5px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+
+/* PDF pane */
+.pdf-pane {
+  position: relative;
+  height: 100%;
+  background: #1b1f27;
+}
+.pdf-toolbar {
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 8px;
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+  z-index: 2;
+}
+.pdf-toolbar button {
+  padding: 2px 8px;
+}
+.pdf-scale {
+  min-width: 44px;
+  text-align: center;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+.pdf-warning {
+  color: #e0b25c;
+  margin-right: 8px;
+}
+.spacer {
+  flex: 1;
+}
+/* pdf.js requires an absolutely positioned scroll container. */
+.pdf-scroll {
+  position: absolute;
+  inset: 34px 0 0 0;
+  overflow: auto;
+}
+.pdf-overlay {
+  position: absolute;
+  inset: 34px 0 0 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  pointer-events: none;
+}
+.pdf-overlay.error {
+  color: var(--danger);
+  padding: 24px;
+}
+
+/* Highlights sit above the text layer; clicks pass through to it. */
+.plato-hl-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  mix-blend-mode: multiply;
+}
+.plato-hl {
+  position: absolute;
+  border-radius: 2px;
+}
+.plato-hl-yellow {
+  background: rgb(255 220 80 / 0.55);
+}
+
+/* Floating menu for a selection or a clicked highlight */
+.floating-menu {
+  position: absolute;
+  transform: translate(-50%, calc(-100% - 8px));
+  display: flex;
+  gap: 2px;
+  padding: 3px;
+  background: #1f2633;
+  border: 1px solid #2e3747;
+  border-radius: 6px;
+  box-shadow: 0 4px 16px rgb(0 0 0 / 0.4);
+  z-index: 10;
+}
+.floating-menu button {
+  background: none;
+  border: none;
+  padding: 4px 10px;
+}
+.floating-menu button:hover {
+  background: var(--bg-active);
+}
+
+/* Chat pane */
+.chat-pane {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: var(--bg);
+}
+.chat-log {
+  flex: 1;
+  overflow: auto;
+  padding: 16px 20px;
+}
+.chat-empty {
+  margin-top: 0;
+}
+.chat-turn {
+  margin-bottom: 16px;
+  line-height: 1.55;
+}
+.chat-turn.user .chat-text {
+  background: var(--bg-hover);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 12px;
+}
+.chat-text {
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+.chat-meta {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+}
+.chat-note {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 4px;
+}
+.chat-error {
+  font-size: 12px;
+  color: var(--danger);
+  margin-top: 4px;
+}
+.chat-input {
+  display: flex;
+  gap: 8px;
+  align-items: flex-end;
+  padding: 10px 12px;
+  border-top: 1px solid var(--border);
+}
+.chat-input textarea {
+  flex: 1;
+  resize: none;
+  font: inherit;
+  color: var(--text);
+  background: var(--bg-sidebar);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 10px;
+}
+.chat-input textarea:focus,
+.api-key-form input:focus {
+  outline: 1px solid var(--accent);
+}
+.api-key-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: 420px;
+}
+.api-key-form p {
+  margin: 0;
+}
+.api-key-form input {
+  font: inherit;
+  color: var(--text);
+  background: var(--bg-sidebar);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 10px;
+}
+.api-key-form button {
+  align-self: flex-start;
+}
+.api-key-form .error {
+  color: var(--danger);
+}
