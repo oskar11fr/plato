@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { ContinueWithChatGPT, PlanWelcome, useSignIn } from "../components/ChatGptSignIn";
 import { account, listModels, openManageUsage, signOut, toLlmError, type AccountInfo } from "../lib/llm";
+import { setThemePref, themePref, type ThemePref } from "../lib/theme";
 import { builtInSkill, loadSkill, resetSkill, saveSkillOverride, skillOverridePath, type Skill } from "../lib/skills";
 
 export function SettingsPane() {
@@ -63,6 +64,7 @@ export function SettingsPane() {
   return (
     <div className="pane settings-pane">
       {welcome && <PlanWelcome onClose={() => setWelcome(false)} />}
+      <Appearance />
       <h2>ChatGPT account</h2>
 
       {info.signedIn ? (
@@ -125,6 +127,39 @@ export function SettingsPane() {
 
       <SkillEditor />
     </div>
+  );
+}
+
+const THEMES: { value: ThemePref; label: string }[] = [
+  { value: "system", label: "Match system" },
+  { value: "light", label: "Paper (light)" },
+  { value: "dark", label: "Night study (dark)" },
+];
+
+function Appearance() {
+  const [pref, setPref] = useState<ThemePref>(themePref);
+  return (
+    <section className="appearance">
+      <h2>Appearance</h2>
+      <fieldset>
+        <legend className="visually-hidden">Theme</legend>
+        {THEMES.map((t) => (
+          <label key={t.value} className="radio">
+            <input
+              type="radio"
+              name="theme"
+              value={t.value}
+              checked={pref === t.value}
+              onChange={() => {
+                setPref(t.value);
+                setThemePref(t.value);
+              }}
+            />
+            {t.label}
+          </label>
+        ))}
+      </fieldset>
+    </section>
   );
 }
 

@@ -91,6 +91,14 @@ instructions). Settings → **Summary instructions** edits it per workspace
 (saved to `.reader/skills/summarize-source/SKILL.md`). The page format the app
 parses is fixed in `src/lib/summary.ts`, so custom instructions can't break it.
 
+## Appearance
+
+Two themes: **Paper** (light: warm off-white, black accent, Source Serif 4 for
+reading and Inter for the interface) and **Night study** (dark: warm charcoal,
+gold accent, Newsreader, dimmed PDF pages). Settings → Appearance picks one or
+follows the system. Fonts are bundled (`@fontsource-variable/*`), and all
+colours are tokens at the top of `src/App.css`.
+
 ## Layout
 
 - `src-tauri/src/workspace.rs` – all file access, scoped to the open folder

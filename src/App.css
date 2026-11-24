@@ -1,21 +1,124 @@
 @import "dockview-react/dist/styles/dockview.css";
 
-:root {
-  --bg: #0b0e14;
-  --bg-sidebar: #10141c;
-  --bg-hover: #1a2030;
-  --bg-active: #22304a;
-  --border: #1f2633;
-  --text: #d6dbe4;
-  --text-muted: #7f8898;
-  --accent: #5b8def;
-  --danger: #e5696b;
+/* ==========================================================================
+   Tokens. "Paper" (light) is the default; "Night study" (dark) follows the
+   OS unless Settings picks one (data-theme on <html>).
+   ========================================================================== */
 
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif;
-  font-size: 13px;
-  color: var(--text);
-  background: var(--bg);
+:root {
+  --paper: #fbfaf7; /* panes */
+  --paper-2: #f4f2ed; /* sidebar, wells */
+  --desk: #efece6; /* behind PDF pages */
+  --hover: #ece8e0;
+  --selected: #e6e1d7;
+  --rule: #e6e2da;
+  --rule-strong: #cfcac0;
+  --ink: #1f1d1a;
+  --ink-2: #3a3732;
+  --muted: #6b665e;
+  --accent: #1f1d1a;
+  --on-accent: #ffffff;
+  --tint: #f0ede6; /* revised passages */
+  --danger: #a3392c;
+  --ok: #2f6b45;
+  --warn: #8a5a12;
+  --hl: rgb(250 204 21 / 0.4);
+  --hl-strong: rgb(234 179 8);
+  --menu-bg: #1f1d1a;
+  --menu-ink: #fbfaf7;
+  --menu-hover: #3a3732;
+  --page-shadow: 0 1px 2px rgb(31 29 26 / 0.08), 0 4px 16px rgb(31 29 26 / 0.06);
+  --pane-shadow: 0 10px 32px rgb(31 29 26 / 0.14), 0 2px 6px rgb(31 29 26 / 0.08);
+  --page-filter: none;
+
+  --font-ui: "Inter Variable", Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-read: "Source Serif 4 Variable", "Source Serif 4", Georgia, serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+/* Night study. Kept in one place and used twice: by the OS setting, and by
+   an explicit choice in Settings. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --paper: #1a1917;
+    --paper-2: #151412;
+    --desk: #121110;
+    --hover: #24221f;
+    --selected: #2b2925;
+    --rule: #2b2925;
+    --rule-strong: #3d3a35;
+    --ink: #e8e4dc;
+    --ink-2: #cfc9be;
+    --muted: #a39e94;
+    --accent: #d4b47a;
+    --on-accent: #1a1917;
+    --tint: #24221e;
+    --danger: #e58a7e;
+    --ok: #8fc79f;
+    --warn: #e0b25c;
+    --hl: rgb(212 160 40 / 0.45);
+    --hl-strong: rgb(212 160 40);
+    --menu-bg: #e8e4dc;
+    --menu-ink: #1a1917;
+    --menu-hover: #cfc9be;
+    --page-shadow: 0 6px 24px rgb(0 0 0 / 0.45);
+    --pane-shadow: 0 12px 40px rgb(0 0 0 / 0.55);
+    --page-filter: brightness(0.86) sepia(0.06);
+    --font-read: "Newsreader Variable", Newsreader, Georgia, serif;
+  }
+}
+:root[data-theme="dark"] {
+  --paper: #1a1917;
+  --paper-2: #151412;
+  --desk: #121110;
+  --hover: #24221f;
+  --selected: #2b2925;
+  --rule: #2b2925;
+  --rule-strong: #3d3a35;
+  --ink: #e8e4dc;
+  --ink-2: #cfc9be;
+  --muted: #a39e94;
+  --accent: #d4b47a;
+  --on-accent: #1a1917;
+  --tint: #24221e;
+  --danger: #e58a7e;
+  --ok: #8fc79f;
+  --warn: #e0b25c;
+  --hl: rgb(212 160 40 / 0.45);
+  --hl-strong: rgb(212 160 40);
+  --menu-bg: #e8e4dc;
+  --menu-ink: #1a1917;
+  --menu-hover: #cfc9be;
+  --page-shadow: 0 6px 24px rgb(0 0 0 / 0.45);
+  --pane-shadow: 0 12px 40px rgb(0 0 0 / 0.55);
+  --page-filter: brightness(0.86) sepia(0.06);
+  --font-read: "Newsreader Variable", Newsreader, Georgia, serif;
+}
+
+/* `html:root` outranks pdf.js's own `:root { color-scheme }`. */
+html:root {
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  html:root:not([data-theme="light"]) {
+    color-scheme: dark;
+  }
+}
+html:root[data-theme="dark"] {
   color-scheme: dark;
+}
+
+/* ==========================================================================
+   Base
+   ========================================================================== */
+
+:root {
+  font-family: var(--font-ui);
+  font-size: 13px;
+  font-feature-settings: "cv11", "ss01";
+  color: var(--ink);
+  background: var(--paper);
+  -webkit-font-smoothing: antialiased;
 }
 
 /* pdf.js sizes pages assuming content-box; border-box there squeezes the
@@ -30,19 +133,132 @@ body,
   margin: 0;
   height: 100%;
   overflow: hidden;
+  background: var(--paper);
 }
 
+::selection {
+  background: var(--hl);
+}
+
+/* Quiet scrollbars (WebKit, which Tauri uses on macOS). */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--rule-strong);
+  border: 3px solid transparent;
+  border-radius: 6px;
+  background-clip: content-box;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* Buttons are words, not boxes; `.primary` is the one solid action. */
 button {
   font: inherit;
-  color: var(--text);
-  background: var(--bg-hover);
-  border: 1px solid var(--border);
+  color: var(--ink);
+  background: none;
+  border: none;
   border-radius: 4px;
-  padding: 4px 10px;
+  padding: 4px 8px;
   cursor: pointer;
 }
 button:hover:not(:disabled) {
-  background: var(--bg-active);
+  background: var(--hover);
+}
+button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+summary:focus-visible {
+  outline: 1.5px solid var(--accent);
+  outline-offset: 1px;
+}
+button.primary {
+  color: var(--on-accent);
+  background: var(--accent);
+  font-weight: 500;
+  padding: 6px 14px;
+}
+button.primary:hover:not(:disabled) {
+  background: var(--accent);
+  filter: brightness(1.15);
+}
+.link-button {
+  padding: 0;
+  color: var(--accent);
+  background: none;
+}
+.link-button:hover:not(:disabled) {
+  background: none;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.icon-button {
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+}
+.icon-button:hover:not(:disabled) {
+  color: var(--ink);
+}
+
+input,
+select,
+textarea {
+  font: inherit;
+  color: var(--ink);
+  background: transparent;
+  border: 1px solid var(--rule-strong);
+  border-radius: 4px;
+  padding: 6px 8px;
+}
+input::placeholder,
+textarea::placeholder {
+  color: var(--muted);
+}
+select {
+  padding: 3px 6px;
+}
+
+.muted {
+  color: var(--muted);
+}
+.ok {
+  color: var(--ok);
+}
+.error {
+  color: var(--danger);
+}
+.spacer {
+  flex: 1;
+}
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+/* Small-caps labels, the house style for section names. */
+.kicker {
+  font-family: var(--font-ui);
+  font-size: 11px;
+  font-variant: all-small-caps;
+  letter-spacing: 0.1em;
+  color: var(--muted);
 }
 
 .app {
@@ -50,21 +266,23 @@ button:hover:not(:disabled) {
   height: 100%;
 }
 
-/* Sidebar */
+/* ==========================================================================
+   Sidebar and file tree
+   ========================================================================== */
+
 .sidebar {
-  width: 260px;
+  width: 236px;
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
-  background: var(--bg-sidebar);
-  border-right: 1px solid var(--border);
+  background: var(--paper-2);
+  border-right: 1px solid var(--rule);
 }
 .sidebar-header {
   display: flex;
   align-items: center;
-  gap: 4px;
-  padding: 8px 8px 8px 12px;
-  border-bottom: 1px solid var(--border);
+  gap: 0;
+  padding: 12px 8px 8px 16px;
 }
 .workspace-name {
   flex: 1;
@@ -73,25 +291,16 @@ button:hover:not(:disabled) {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.icon-button {
-  background: none;
-  border: none;
-  padding: 2px 6px;
-  color: var(--text-muted);
-}
-.icon-button:hover {
-  color: var(--text);
-}
 .sidebar-error {
-  padding: 8px 12px;
+  margin: 4px 16px 8px;
   color: var(--danger);
+  font-size: 12px;
   word-break: break-word;
 }
 .sidebar-empty {
-  padding: 16px 12px;
+  padding: 16px;
 }
 
-/* File tree */
 .tree,
 .tree ul {
   list-style: none;
@@ -101,114 +310,503 @@ button:hover:not(:disabled) {
 .tree {
   flex: 1;
   overflow: auto;
-  padding: 4px 0;
+  padding: 2px 8px 12px;
 }
 .tree-row {
   display: flex;
   align-items: center;
   width: 100%;
-  padding: 3px 8px;
-  background: none;
-  border: none;
-  border-radius: 0;
+  padding: 4px 8px;
   text-align: left;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-}
-.tree-row:hover:not(:disabled) {
-  background: var(--bg-hover);
+  color: var(--ink);
 }
 .tree-row.active {
-  background: var(--bg-active);
+  background: var(--selected);
+  font-weight: 500;
 }
-.tree-row:disabled {
-  color: var(--text-muted);
-  cursor: default;
+.tree-row.active:hover:not(:disabled) {
+  background: var(--selected);
 }
 .tree-caret {
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
   width: 14px;
   flex-shrink: 0;
-  color: var(--text-muted);
+  color: var(--muted);
+}
+/* Top-level folders read as section labels. */
+.tree-row.section {
+  margin-top: 12px;
+  font-size: 11px;
+  font-variant: all-small-caps;
+  letter-spacing: 0.09em;
+  color: var(--muted);
+}
+.tree > li:first-child > .tree-row.section {
+  margin-top: 4px;
+}
+.tree-row.section:hover:not(:disabled) {
+  background: none;
+  color: var(--ink);
+}
+.tree-row.unopenable {
+  color: var(--muted);
+  cursor: default;
+}
+/* The folder "Add files" copies into. */
+.tree-row.target {
+  color: var(--ink);
+  text-decoration: underline;
+  text-decoration-color: var(--rule-strong);
+  text-underline-offset: 4px;
+}
+@keyframes plato-added {
+  from {
+    background: var(--hl);
+  }
+  to {
+    background: transparent;
+  }
+}
+.tree-row.added {
+  animation: plato-added 4s ease-out;
+}
+.tree-row.drop-target,
+.tree.drop-target {
+  background: var(--hover);
+  box-shadow: inset 0 0 0 1px var(--rule-strong);
+}
+.drag-ghost {
+  position: fixed;
+  z-index: 1000;
+  pointer-events: none;
+  padding: 3px 8px;
+  font-size: 12px;
+  color: var(--ink);
+  background: var(--paper);
+  border: 1px solid var(--rule-strong);
+  border-radius: 4px;
+  box-shadow: var(--pane-shadow);
 }
 
-/* Dock area and panes */
+.sidebar-footer {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 8px 10px;
+  border-top: 1px solid var(--rule);
+}
+.add-files {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 8px;
+  text-align: left;
+  color: var(--muted);
+}
+.add-files:hover:not(:disabled) {
+  color: var(--ink);
+}
+.add-files-target {
+  margin-left: auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+}
+.sidebar-status {
+  padding: 0 8px;
+  font-size: 12px;
+  color: var(--ok);
+}
+.sidebar-footer .link-button {
+  align-self: flex-start;
+  margin-left: 8px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+/* Right-click menu on files */
+.context-menu {
+  position: fixed;
+  z-index: 1000;
+  min-width: 190px;
+  padding: 4px;
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  box-shadow: var(--pane-shadow);
+}
+.context-menu-title {
+  padding: 4px 8px 6px;
+  margin-bottom: 4px;
+  font-size: 11px;
+  color: var(--muted);
+  border-bottom: 1px solid var(--rule);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.context-menu button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 5px 8px;
+}
+.context-menu button.danger {
+  color: var(--danger);
+}
+
+/* ==========================================================================
+   Dock (dockview): flat tabs, the visible one underlined
+   ========================================================================== */
+
 .dock {
   flex: 1;
   min-width: 0;
 }
+.dockview-theme-light.plato-dock {
+  color-scheme: inherit;
+  --dv-group-view-background-color: var(--paper);
+  --dv-tabs-and-actions-container-background-color: var(--paper);
+  --dv-activegroup-visiblepanel-tab-background-color: var(--paper);
+  --dv-activegroup-hiddenpanel-tab-background-color: var(--paper);
+  --dv-inactivegroup-visiblepanel-tab-background-color: var(--paper);
+  --dv-inactivegroup-hiddenpanel-tab-background-color: var(--paper);
+  --dv-tab-divider-color: transparent;
+  --dv-activegroup-visiblepanel-tab-color: var(--ink);
+  --dv-activegroup-hiddenpanel-tab-color: var(--muted);
+  --dv-inactivegroup-visiblepanel-tab-color: var(--ink-2);
+  --dv-inactivegroup-hiddenpanel-tab-color: var(--muted);
+  --dv-separator-border: var(--rule);
+  --dv-paneview-header-border-color: var(--rule);
+  --dv-tabs-and-actions-container-height: 38px;
+  --dv-tabs-and-actions-container-font-size: 13px;
+  --dv-icon-hover-background-color: var(--hover);
+  --dv-drag-over-background-color: color-mix(in srgb, var(--accent) 10%, transparent);
+  --dv-drag-over-border-color: var(--rule-strong);
+  --dv-edge-dock-indicator-color: var(--accent);
+  --dv-scrollbar-background-color: var(--rule-strong);
+  --dv-tabs-container-scrollbar-color: var(--rule-strong);
+  --dv-active-sash-color: var(--rule-strong);
+  --dv-floating-box-shadow: var(--pane-shadow);
+  --dv-floating-border: 1px solid var(--rule);
+  font-family: var(--font-ui);
+}
+.plato-dock .dv-tabs-and-actions-container {
+  border-bottom: 1px solid var(--rule);
+  padding: 0 8px;
+}
+.plato-dock .dv-tab {
+  padding: 0 4px;
+  margin: 0 6px;
+}
+.plato-dock .dv-tab.dv-active-tab {
+  box-shadow: inset 0 -1.5px 0 var(--rule-strong);
+}
+.plato-dock .dv-active-group .dv-tab.dv-active-tab {
+  box-shadow: inset 0 -1.5px 0 var(--ink);
+  font-weight: 500;
+}
+.plato-dock .dv-default-tab-action {
+  color: var(--muted);
+}
+
+/* ==========================================================================
+   Panes (shared)
+   ========================================================================== */
+
 .pane {
   height: 100%;
   overflow: auto;
-  background: var(--bg);
+  background: var(--paper);
 }
 .pane-message {
-  padding: 24px;
+  padding: 28px 32px;
+  line-height: 1.55;
 }
 .pane-message.error {
   color: var(--danger);
 }
-.muted {
-  color: var(--text-muted);
-}
 .text-view {
   margin: 0;
-  padding: 16px 24px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  padding: 20px 28px;
+  font-family: var(--font-mono);
   font-size: 12.5px;
-  line-height: 1.55;
+  line-height: 1.6;
   white-space: pre-wrap;
   word-wrap: break-word;
+  color: var(--ink-2);
 }
 
-/* PDF pane */
+/* A quiet strip of words at the top of a pane. */
+.pdf-toolbar,
+.summary-header,
+.text-toolbar,
+.chat-header {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 36px;
+  padding: 0 12px;
+  font-size: 12px;
+  color: var(--muted);
+  background: var(--paper);
+}
+.pdf-toolbar button,
+.summary-header button,
+.text-toolbar button,
+.chat-header button {
+  padding: 4px 8px;
+  white-space: nowrap;
+}
+
+/* ==========================================================================
+   Reading: rendered Markdown, summaries, wiki pages, answers
+   ========================================================================== */
+
+.markdown {
+  font-family: var(--font-read);
+  font-size: 16px;
+  line-height: 1.62;
+  overflow-wrap: break-word;
+  font-variant-numeric: oldstyle-nums proportional-nums;
+}
+.markdown > :first-child {
+  margin-top: 0;
+}
+.markdown > :last-child {
+  margin-bottom: 0;
+}
+.markdown p,
+.markdown ul,
+.markdown ol,
+.markdown blockquote,
+.markdown pre,
+.markdown table {
+  margin: 0 0 14px;
+}
+.markdown ul,
+.markdown ol {
+  padding-left: 22px;
+}
+.markdown li {
+  margin: 2px 0;
+}
+.markdown li::marker {
+  color: var(--muted);
+}
+.markdown h1 {
+  font-size: 24px;
+  line-height: 1.25;
+  font-weight: 600;
+  margin: 26px 0 8px;
+}
+/* Section headings in small caps, as in a typeset paper. */
+.markdown h2 {
+  font-size: 14px;
+  font-weight: 600;
+  font-variant: all-small-caps;
+  letter-spacing: 0.1em;
+  margin: 24px 0 4px;
+}
+.markdown h3,
+.markdown h4 {
+  font-size: 16px;
+  font-weight: 600;
+  font-style: italic;
+  margin: 18px 0 4px;
+}
+.markdown strong {
+  font-weight: 600;
+}
+.markdown blockquote {
+  padding: 0 0 0 14px;
+  border-left: 2px solid var(--rule-strong);
+  color: var(--ink-2);
+}
+.markdown hr {
+  border: none;
+  border-top: 1px solid var(--rule);
+  margin: 22px 0;
+}
+.markdown code {
+  font-family: var(--font-mono);
+  font-size: 0.82em;
+  background: var(--hover);
+  padding: 1px 4px;
+  border-radius: 3px;
+}
+.markdown pre {
+  background: var(--paper-2);
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  padding: 10px 12px;
+  overflow-x: auto;
+  line-height: 1.5;
+}
+.markdown pre code {
+  background: none;
+  padding: 0;
+}
+.markdown table {
+  border-collapse: collapse;
+  display: block;
+  overflow-x: auto;
+  font-size: 14px;
+  font-variant-numeric: lining-nums tabular-nums;
+}
+.markdown th,
+.markdown td {
+  border-bottom: 1px solid var(--rule);
+  padding: 4px 12px 4px 0;
+  text-align: left;
+}
+.markdown th {
+  font-weight: 600;
+  border-bottom-color: var(--rule-strong);
+}
+.markdown a {
+  color: var(--accent);
+  text-decoration: none;
+  border-bottom: 1px solid var(--rule-strong);
+}
+.markdown a:hover {
+  border-bottom-color: currentColor;
+}
+.markdown a.wikilink {
+  border-bottom: 1px dotted currentColor;
+}
+/* Page citations: small, set in the interface face. */
+.markdown a.wikilink.cite {
+  font-family: var(--font-ui);
+  font-size: 11px;
+  font-variant-numeric: lining-nums;
+  color: var(--muted);
+  border-bottom: none;
+  white-space: nowrap;
+}
+.markdown a.wikilink.cite:hover {
+  color: var(--accent);
+}
+.markdown .md-image {
+  color: var(--muted);
+}
+.markdown.inline,
+.markdown.inline > p {
+  display: inline;
+  margin: 0;
+  font-family: var(--font-ui);
+  font-size: inherit;
+}
+/* Long display equations scroll instead of overflowing the pane. */
+.markdown .katex-display {
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 4px 0;
+  margin: 12px 0 16px;
+}
+.markdown .katex {
+  font-size: 1.04em;
+}
+.markdown .katex-error {
+  color: var(--danger);
+}
+
+/* A page of reading: a measured column with room in the left margin for
+   notes such as "revised". */
+.reading {
+  max-width: 680px;
+  margin: 0 auto;
+  padding: 28px clamp(18px, 6%, 40px) 48px clamp(22px, 9%, 64px);
+}
+.reading-title {
+  font-family: var(--font-read);
+  font-size: 28px;
+  line-height: 1.2;
+  font-weight: 600;
+  letter-spacing: -0.005em;
+  margin: 4px 0 6px;
+}
+.reading-byline {
+  font-family: var(--font-read);
+  font-size: 15px;
+  color: var(--muted);
+  margin-bottom: 24px;
+}
+.byline-authors {
+  font-variant: small-caps;
+  letter-spacing: 0.03em;
+}
+.reading-byline .source-link {
+  font-family: var(--font-ui);
+  font-size: 12px;
+  color: var(--muted);
+  border-bottom: 1px dotted currentColor;
+}
+.reading-byline .source-link:hover:not(:disabled) {
+  color: var(--ink);
+  text-decoration: none;
+}
+
+/* ==========================================================================
+   PDF pane
+   ========================================================================== */
+
 .pdf-pane {
   position: relative;
   height: 100%;
-  background: #1b1f27;
+  background: var(--desk);
 }
 .pdf-toolbar {
   position: absolute;
   inset: 0 0 auto 0;
-  height: 34px;
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  padding: 0 8px;
-  background: var(--bg);
-  border-bottom: 1px solid var(--border);
+  height: 36px;
+  border-bottom: 1px solid var(--rule);
   z-index: 2;
 }
 .pdf-toolbar button {
-  padding: 2px 8px;
+  color: var(--ink);
 }
 .pdf-scale {
-  min-width: 44px;
+  min-width: 40px;
   text-align: center;
-  color: var(--text-muted);
   font-variant-numeric: tabular-nums;
 }
 .pdf-warning {
-  color: #e0b25c;
+  color: var(--warn);
   margin-right: 8px;
-}
-.spacer {
-  flex: 1;
 }
 /* pdf.js requires an absolutely positioned scroll container. */
 .pdf-scroll {
   position: absolute;
-  inset: 34px 0 0 0;
+  inset: 36px 0 0 0;
   overflow: auto;
+}
+.pdfViewer {
+  --page-border: 0 solid transparent;
+  --page-margin: 18px auto;
+  padding-bottom: 12px;
+}
+.pdfViewer .page {
+  box-shadow: var(--page-shadow);
+}
+/* Night study dims the page images (not the highlights) to cut the glare. */
+.pdfViewer .page .canvasWrapper {
+  filter: var(--page-filter);
 }
 .pdf-overlay {
   position: absolute;
-  inset: 34px 0 0 0;
+  inset: 36px 0 0 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: var(--text-muted);
+  color: var(--muted);
   pointer-events: none;
 }
 .pdf-overlay.error {
@@ -229,7 +827,20 @@ button:hover:not(:disabled) {
   border-radius: 2px;
 }
 .plato-hl-yellow {
-  background: rgb(255 220 80 / 0.55);
+  background: var(--hl);
+}
+@keyframes plato-hl-flash {
+  0%,
+  60% {
+    background: var(--hl-strong);
+    box-shadow: 0 0 0 3px var(--hl);
+  }
+  100% {
+    box-shadow: none;
+  }
+}
+.plato-hl.flash {
+  animation: plato-hl-flash 1.6s ease-out;
 }
 
 /* Floating menu for a selection or a clicked highlight */
@@ -237,60 +848,145 @@ button:hover:not(:disabled) {
   position: absolute;
   transform: translate(-50%, calc(-100% - 8px));
   display: flex;
-  gap: 2px;
-  padding: 3px;
-  background: #1f2633;
-  border: 1px solid #2e3747;
-  border-radius: 6px;
-  box-shadow: 0 4px 16px rgb(0 0 0 / 0.4);
+  padding: 2px;
+  background: var(--menu-bg);
+  border-radius: 5px;
+  box-shadow: var(--pane-shadow);
   z-index: 10;
 }
 .floating-menu button {
-  background: none;
-  border: none;
-  padding: 4px 10px;
+  color: var(--menu-ink);
+  padding: 5px 10px;
+  font-size: 12px;
 }
-.floating-menu button:hover {
-  background: var(--bg-active);
+.floating-menu button:hover:not(:disabled) {
+  background: var(--menu-hover);
 }
 
-/* Chat pane */
+/* ==========================================================================
+   Text pane (Markdown and plain text files)
+   ========================================================================== */
+
+.text-pane {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.text-toolbar {
+  border-bottom: 1px solid var(--rule);
+}
+.text-pane .text-view,
+.text-rendered {
+  flex: 1;
+  overflow: auto;
+}
+.properties {
+  margin: 0 0 22px;
+  font-size: 12px;
+}
+.properties summary {
+  cursor: pointer;
+  width: max-content;
+  font-size: 11px;
+  font-variant: all-small-caps;
+  letter-spacing: 0.1em;
+  color: var(--muted);
+}
+.properties dl {
+  margin: 8px 0 0;
+  padding: 8px 0;
+  border-top: 1px solid var(--rule);
+  border-bottom: 1px solid var(--rule);
+}
+.properties dl > div {
+  display: flex;
+  gap: 12px;
+  padding: 2px 0;
+}
+.properties dt {
+  width: 72px;
+  flex: none;
+  color: var(--muted);
+}
+.properties dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+/* ==========================================================================
+   Chat pane: questions and answers as margin notes, not bubbles
+   ========================================================================== */
+
 .chat-pane {
   display: flex;
   flex-direction: column;
   height: 100%;
-  background: var(--bg);
+  background: var(--paper);
+}
+.chat-header {
+  border-bottom: 1px solid var(--rule);
+  gap: 6px;
+}
+.chat-header select {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  color: var(--ink);
+  font-size: 12.5px;
+  padding: 4px 2px;
 }
 .chat-log {
   flex: 1;
   overflow: auto;
-  padding: 16px 20px;
+  padding: 22px 28px 12px;
 }
 .chat-empty {
-  margin-top: 0;
+  margin: 0;
+  font-family: var(--font-read);
+  font-size: 15px;
+  font-style: italic;
 }
 .chat-turn {
-  margin-bottom: 16px;
-  line-height: 1.55;
+  margin-bottom: 18px;
 }
-.chat-turn.user .chat-text {
-  background: var(--bg-hover);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 8px 12px;
+.chat-turn.user {
+  margin-bottom: 10px;
+}
+.turn-row {
+  display: flex;
+  gap: 12px;
+  align-items: baseline;
+}
+.turn-label {
+  flex: none;
+  width: 18px;
+  font-size: 11px;
+  font-variant: all-small-caps;
+  letter-spacing: 0.1em;
+  color: var(--muted);
+}
+.turn-body {
+  flex: 1;
+  min-width: 0;
 }
 .chat-text {
+  font-family: var(--font-read);
+  font-size: 16px;
+  line-height: 1.55;
   white-space: pre-wrap;
   word-wrap: break-word;
 }
+.chat-turn.user .chat-text {
+  font-style: italic;
+}
 .chat-meta {
+  margin-top: 6px;
   font-size: 11px;
-  color: var(--text-muted);
-  margin-bottom: 4px;
+  color: var(--muted);
 }
 .chat-note {
   font-size: 12px;
-  color: var(--text-muted);
+  color: var(--muted);
   margin-top: 4px;
 }
 .chat-error {
@@ -298,49 +994,360 @@ button:hover:not(:disabled) {
   color: var(--danger);
   margin-top: 4px;
 }
+.chat-save-error {
+  margin: 0 20px 8px;
+  color: var(--danger);
+  font-size: 12px;
+}
+
+/* A quoted passage: indented under a thin rule, with its page. */
+.chat-passage {
+  display: block;
+  width: calc(100% - 30px);
+  margin: 0 0 10px 30px;
+  padding: 1px 0 1px 14px;
+  text-align: left;
+  border-left: 2px solid var(--rule-strong);
+  border-radius: 0;
+}
+.chat-passage:hover:not(:disabled) {
+  background: none;
+  border-left-color: var(--hl-strong);
+}
+.chat-passage-text {
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  font-family: var(--font-read);
+  font-size: 15px;
+  line-height: 1.5;
+  color: var(--ink-2);
+}
+.chat-passage-source {
+  display: block;
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+/* The passage waiting to be sent with the next question. */
+.chat-attachment {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 0 20px 6px;
+  padding: 2px 0 2px 12px;
+  border-left: 2px solid var(--hl-strong);
+}
+.chat-attachment-quote {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 0;
+  text-align: left;
+}
+.chat-attachment-quote:hover:not(:disabled) {
+  background: none;
+}
+.chat-attachment-label {
+  font-size: 11px;
+  color: var(--muted);
+}
+.chat-attachment-text {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  font-family: var(--font-read);
+  font-size: 14px;
+  font-style: italic;
+  color: var(--ink-2);
+}
+
+/* The composer: an underlined line, not a box. */
 .chat-input {
   display: flex;
-  gap: 8px;
+  gap: 10px;
   align-items: flex-end;
-  padding: 10px 12px;
-  border-top: 1px solid var(--border);
+  padding: 12px 20px 10px;
+  border-top: 1px solid var(--rule);
 }
 .chat-input textarea {
   flex: 1;
   resize: none;
-  font: inherit;
-  color: var(--text);
-  background: var(--bg-sidebar);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 8px 10px;
+  border: none;
+  border-bottom: 1px solid var(--rule-strong);
+  border-radius: 0;
+  padding: 6px 0;
+  line-height: 1.5;
 }
 .chat-input textarea:focus {
-  outline: 1px solid var(--accent);
+  outline: none;
+  border-bottom-color: var(--ink);
 }
-/* Settings pane */
+.chat-input button[type="submit"] {
+  color: var(--on-accent);
+  background: var(--accent);
+  font-weight: 500;
+  padding: 6px 14px;
+}
+.chat-input button[type="submit"]:hover:not(:disabled) {
+  filter: brightness(1.15);
+}
+.chat-footer {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 20px 10px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.chat-footer select {
+  border: none;
+  color: var(--muted);
+  font-size: 11px;
+  padding: 2px 0;
+  margin-right: auto;
+}
+.chat-footer .link-button {
+  color: var(--muted);
+}
+.usage-limit {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0 20px 8px;
+  padding: 8px 12px;
+  background: var(--paper-2);
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+}
+.usage-limit strong {
+  color: var(--warn);
+  font-weight: 600;
+}
+
+/* ==========================================================================
+   Summary pane
+   ========================================================================== */
+
+.summary-pane {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: var(--paper);
+}
+.summary-header {
+  gap: 2px;
+}
+.summary-header .icon-button {
+  width: 26px;
+  height: 26px;
+  font-size: 10px;
+}
+.summary-version {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  margin: 0 2px;
+}
+.summary-origin {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+  margin-left: 8px;
+}
+.summary-body {
+  flex: 1;
+  overflow: auto;
+}
+/* A revised passage: a faint tint, and a note in the margin. */
+.summary-block {
+  position: relative;
+  margin: 0 -10px;
+  padding: 2px 10px 14px;
+  border-radius: 3px;
+}
+/* Headings keep their space above when the page is split into blocks. */
+.summary-block .markdown > h1:first-child,
+.summary-block .markdown > h2:first-child,
+.summary-block .markdown > h3:first-child {
+  margin-top: 12px;
+}
+/* A run of revised blocks reads as one passage with one note. */
+.summary-block.changed + .summary-block.changed {
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+}
+.summary-block.changed:has(+ .summary-block.changed) {
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+}
+.summary-block.changed + .summary-block.changed::before {
+  content: none;
+}
+.summary-block .markdown > :last-child {
+  margin-bottom: 0;
+}
+.summary-block.changed {
+  background: var(--tint);
+}
+.summary-block.changed::before {
+  content: "revised";
+  position: absolute;
+  left: -48px;
+  top: 8px;
+  font-family: var(--font-ui);
+  font-size: 10px;
+  font-variant: all-small-caps;
+  letter-spacing: 0.1em;
+  color: var(--accent);
+}
+.summary-edit {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 16px;
+  min-height: 0;
+}
+.summary-edit textarea {
+  flex: 1;
+  resize: none;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  line-height: 1.55;
+  background: var(--paper-2);
+  border-color: var(--rule);
+  padding: 12px 14px;
+}
+.summary-edit .row,
+.summary-start .row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+.summary-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 20px 10px;
+  font-size: 12px;
+}
+.summary-actions .link-button {
+  color: var(--muted);
+  font-size: 12px;
+}
+.summary-status {
+  padding: 0 20px 6px;
+}
+.summary-start {
+  flex: 1;
+  overflow: auto;
+  padding: 36px 40px;
+  max-width: 600px;
+}
+.summary-start h2 {
+  font-family: var(--font-read);
+  font-size: 24px;
+  font-weight: 600;
+  margin: 0 0 8px;
+}
+.summary-start > p {
+  font-family: var(--font-read);
+  font-size: 15px;
+  line-height: 1.55;
+}
+.summary-start form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin-top: 22px;
+}
+.summary-start label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.summary-start label.checkbox {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  color: var(--ink);
+  font-size: 13px;
+}
+.summary-start input[type="text"] {
+  border: none;
+  border-bottom: 1px solid var(--rule-strong);
+  border-radius: 0;
+  padding: 6px 0;
+  font-size: 14px;
+}
+.summary-start input[type="text"]:focus {
+  outline: none;
+  border-bottom-color: var(--ink);
+}
+.summary-start .connection-notice {
+  padding: 8px 0;
+}
+.summary-start .summary-status {
+  padding: 12px 0 0;
+}
+label.checkbox.small {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+  margin-right: 6px;
+}
+.summary-start code,
+.skill-editor code,
+.settings-pane code,
+.connection-notice code {
+  font-family: var(--font-mono);
+  font-size: 0.88em;
+  background: var(--hover);
+  padding: 1px 4px;
+  border-radius: 3px;
+}
+
+/* ==========================================================================
+   Settings
+   ========================================================================== */
+
 .settings-pane {
-  padding: 20px 24px;
-  max-width: 640px;
+  padding: 32px 40px 48px;
+  max-width: 660px;
+  line-height: 1.5;
 }
 .settings-pane h2 {
-  font-size: 15px;
-  margin: 0 0 16px;
+  font-family: var(--font-read);
+  font-size: 20px;
+  font-weight: 600;
+  margin: 0 0 12px;
+}
+.settings-pane section {
+  margin-bottom: 16px;
+}
+.settings-pane section + h2,
+.settings-pane section + section {
+  margin-top: 32px;
+  padding-top: 24px;
+  border-top: 1px solid var(--rule);
 }
 .settings-pane fieldset {
   border: none;
   padding: 0;
   margin: 0 0 12px;
   display: flex;
-  gap: 16px;
+  gap: 18px;
   flex-wrap: wrap;
-}
-.settings-pane legend {
-  color: var(--text-muted);
-  margin-bottom: 6px;
-}
-.settings-pane section {
-  margin-bottom: 12px;
 }
 .settings-pane label {
   display: flex;
@@ -355,69 +1362,55 @@ button:hover:not(:disabled) {
   gap: 6px;
   margin: 0;
 }
-.settings-pane label.checkbox {
-  margin: 10px 0;
-}
-.settings-pane input:not([type="radio"], [type="checkbox"]),
-.settings-pane select,
-.settings-pane textarea {
-  font: inherit;
-  color: var(--text);
-  background: var(--bg-sidebar);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 6px 10px;
+.settings-pane input[type="radio"],
+.settings-pane input[type="checkbox"] {
+  accent-color: var(--accent);
 }
 .settings-pane textarea {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: var(--font-mono);
   font-size: 12px;
   resize: vertical;
-}
-.settings-pane details {
-  margin: 8px 0 16px;
-  border-top: 1px solid var(--border);
-  padding-top: 10px;
-}
-.settings-pane summary {
-  cursor: pointer;
-  color: var(--text-muted);
+  background: var(--paper-2);
+  border-color: var(--rule);
 }
 .settings-pane .row {
   display: flex;
   gap: 8px;
   align-items: center;
+  flex-wrap: wrap;
 }
-.settings-pane .row input {
-  flex: 1;
+.settings-pane .actions {
+  margin: 12px 0;
 }
-.settings-pane .ok {
-  color: #6fcf97;
+.settings-pane .actions button:not(.primary):not(.link-button) {
+  border: 1px solid var(--rule-strong);
 }
-.settings-pane .error {
-  color: var(--danger);
+.plan-option {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 12px 0;
+  margin: 12px 0;
+  border-top: 1px solid var(--rule);
+  border-bottom: 1px solid var(--rule);
 }
-.settings-pane code,
-.connection-notice code {
-  font-size: 12px;
-  background: var(--bg-hover);
-  padding: 1px 4px;
-  border-radius: 3px;
+.plan-option p {
+  margin: 4px 0 0;
 }
-.link-button {
-  background: none;
-  border: none;
-  padding: 0;
-  color: var(--accent);
-}
-.link-button:hover:not(:disabled) {
-  background: none;
-  text-decoration: underline;
+.skill-editor textarea {
+  width: 100%;
+  min-height: 300px;
+  line-height: 1.55;
 }
 .connection-notice {
-  max-width: 460px;
+  max-width: 480px;
 }
 
-/* Sign in with ChatGPT */
+/* ==========================================================================
+   Sign in with ChatGPT (button per OpenAI's guidelines) and the plan notice
+   ========================================================================== */
+
 .siwc-button {
   display: inline-flex;
   align-items: center;
@@ -437,69 +1430,29 @@ button:hover:not(:disabled) {
   align-items: center;
   gap: 10px;
 }
-.plan-option {
-  display: flex;
-  gap: 16px;
-  align-items: flex-start;
-  justify-content: space-between;
-  padding: 12px;
-  margin: 12px 0;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-}
-.plan-option p {
-  margin: 4px 0 0;
-}
-.settings-pane .actions {
-  margin: 12px 0;
-}
-.chat-footer {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 0 12px 10px;
-  font-size: 12px;
-}
-.chat-footer select {
-  font: inherit;
-  color: var(--text);
-  background: var(--bg-sidebar);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 3px 6px;
-  margin-right: auto;
-}
-.usage-limit {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  margin: 0 12px 8px;
-  padding: 8px 12px;
-  border: 1px solid #6b4a1f;
-  background: #2a2113;
-  border-radius: 6px;
-}
 .modal-backdrop {
   position: fixed;
   inset: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgb(0 0 0 / 0.5);
+  background: rgb(0 0 0 / 0.35);
   z-index: 100;
 }
 .modal {
-  width: min(420px, calc(100vw - 32px));
-  padding: 20px 24px;
-  background: var(--bg-sidebar);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  box-shadow: 0 12px 40px rgb(0 0 0 / 0.5);
+  width: min(440px, calc(100vw - 32px));
+  padding: 22px 26px;
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  box-shadow: var(--pane-shadow);
+  line-height: 1.5;
 }
 .modal h3 {
+  font-family: var(--font-read);
+  font-size: 18px;
+  font-weight: 600;
   margin: 0 0 8px;
-  font-size: 15px;
 }
 .modal-actions {
   display: flex;
@@ -507,536 +1460,29 @@ button:hover:not(:disabled) {
   margin-top: 16px;
 }
 
-/* Rendered Markdown + math in answers */
-.markdown {
-  line-height: 1.6;
-  overflow-wrap: break-word;
-}
-.markdown > :first-child {
-  margin-top: 0;
-}
-.markdown > :last-child {
-  margin-bottom: 0;
-}
-.markdown p,
-.markdown ul,
-.markdown ol,
-.markdown blockquote,
-.markdown pre,
-.markdown table {
-  margin: 0 0 10px;
-}
-.markdown ul,
-.markdown ol {
-  padding-left: 22px;
-}
-.markdown h1,
-.markdown h2,
-.markdown h3,
-.markdown h4 {
-  font-size: 14px;
-  margin: 14px 0 6px;
-}
-.markdown blockquote {
-  padding: 2px 12px;
-  border-left: 3px solid var(--border);
-  color: var(--text-muted);
-}
-.markdown code {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 12px;
-  background: var(--bg-hover);
-  padding: 1px 4px;
-  border-radius: 3px;
-}
-.markdown pre {
-  background: var(--bg-sidebar);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 10px 12px;
-  overflow-x: auto;
-}
-.markdown pre code {
+/* In the summary pane, "Save to wiki" is the one solid action. */
+.summary-pane .chat-input button[type="submit"] {
+  color: var(--ink);
   background: none;
-  padding: 0;
+  font-weight: 400;
+  padding: 6px 8px;
 }
-.markdown table {
-  border-collapse: collapse;
-  display: block;
-  overflow-x: auto;
-}
-.markdown th,
-.markdown td {
-  border: 1px solid var(--border);
-  padding: 4px 8px;
-}
-.markdown a {
-  color: var(--accent);
-}
-.markdown .md-image {
-  color: var(--text-muted);
-}
-/* Long display equations scroll instead of overflowing the pane. */
-.markdown .katex-display {
-  overflow-x: auto;
-  overflow-y: hidden;
-  padding: 4px 0;
-  margin: 8px 0;
-}
-.markdown .katex {
-  font-size: 1.08em;
-}
-.markdown .katex-error {
-  color: var(--danger);
+.summary-pane .chat-input button[type="submit"]:hover:not(:disabled) {
+  background: var(--hover);
+  filter: none;
 }
 
-/* Chat header: chat picker, new, delete */
-.chat-header {
-  display: flex;
-  gap: 6px;
-  align-items: center;
-  padding: 6px 10px;
-  border-bottom: 1px solid var(--border);
-}
-.chat-header select {
-  flex: 1;
-  min-width: 0;
-  font: inherit;
-  color: var(--text);
-  background: var(--bg-sidebar);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 4px 6px;
-}
-.chat-header button {
-  padding: 3px 10px;
-  white-space: nowrap;
-}
-.chat-save-error {
-  margin: 0 12px 8px;
-  color: var(--danger);
-  font-size: 12px;
-}
-@keyframes plato-hl-flash {
-  0%,
-  60% {
-    background: rgb(255 170 0 / 0.9);
-    box-shadow: 0 0 0 3px rgb(255 170 0 / 0.6);
-  }
-  100% {
-    box-shadow: none;
-  }
-}
-.plato-hl.flash {
-  animation: plato-hl-flash 1.6s ease-out;
+input[type="checkbox"],
+input[type="radio"] {
+  accent-color: var(--accent);
 }
 
-/* Passages: attached in the composer, quoted in questions */
-.chat-attachment {
-  display: flex;
-  align-items: flex-start;
-  gap: 6px;
-  margin: 0 12px 6px;
-  padding: 6px 6px 6px 10px;
-  background: var(--bg-sidebar);
-  border: 1px solid var(--border);
-  border-left: 3px solid rgb(255 200 60);
-  border-radius: 6px;
-}
-.chat-attachment-quote {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: 0;
-  text-align: left;
-  background: none;
-  border: none;
-}
-.chat-attachment-quote:hover:not(:disabled) {
-  background: none;
-}
-.chat-attachment-label {
-  font-size: 11px;
-  color: var(--text-muted);
-}
-.chat-attachment-text {
-  display: -webkit-box;
-  -webkit-line-clamp: 3;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-  font-style: italic;
-}
-.chat-passage {
-  display: block;
-  width: 100%;
-  margin-bottom: 6px;
-  padding: 6px 10px;
-  text-align: left;
-  font-style: italic;
-  color: var(--text-muted);
-  background: none;
-  border: none;
-  border-left: 3px solid rgb(255 200 60);
-  border-radius: 0;
-}
-.chat-passage:hover:not(:disabled) {
-  background: var(--bg-hover);
-}
-.chat-passage-text {
-  display: -webkit-box;
-  -webkit-line-clamp: 4;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-.chat-passage-source {
-  display: block;
-  margin-top: 2px;
-  font-style: normal;
-  font-size: 11px;
-  color: var(--accent);
-}
-
-/* Sidebar: destination folder and "Add files" */
-.tree-row.target {
-  box-shadow: inset 2px 0 0 var(--accent);
-  background: rgb(91 141 239 / 0.08);
-}
-@keyframes plato-added {
-  from {
-    background: rgb(111 207 151 / 0.35);
-  }
-  to {
-    background: transparent;
-  }
-}
-.tree-row.added {
-  animation: plato-added 4s ease-out;
-}
-.sidebar-footer {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 8px;
-  border-top: 1px solid var(--border);
-}
-.add-files {
-  display: flex;
-  align-items: baseline;
-  gap: 6px;
-  width: 100%;
-  padding: 6px 10px;
-  text-align: left;
-}
-.add-files-target {
-  margin-left: auto;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 11px;
-  color: var(--text-muted);
-}
-.sidebar-status {
-  font-size: 12px;
-  color: #6fcf97;
-}
-.sidebar-footer .link-button {
-  align-self: flex-start;
-  font-size: 12px;
-}
-
-/* Tree drag and drop */
-.tree-row.unopenable {
-  color: var(--text-muted);
-  cursor: default;
-}
-.tree-row.drop-target,
-.tree.drop-target {
-  background: rgb(91 141 239 / 0.22);
-  box-shadow: inset 0 0 0 1px var(--accent);
-}
-.drag-ghost {
-  position: fixed;
-  z-index: 1000;
-  pointer-events: none;
-  padding: 3px 8px;
-  font-size: 12px;
-  background: var(--bg-active);
-  border: 1px solid var(--accent);
-  border-radius: 4px;
-  box-shadow: 0 4px 12px rgb(0 0 0 / 0.4);
-}
-
-/* Right-click menu on files */
-.context-menu {
-  position: fixed;
-  z-index: 1000;
-  min-width: 180px;
-  padding: 4px;
-  background: #1f2633;
-  border: 1px solid #2e3747;
-  border-radius: 6px;
-  box-shadow: 0 8px 24px rgb(0 0 0 / 0.45);
-}
-.context-menu-title {
-  padding: 4px 8px 6px;
-  font-size: 11px;
-  color: var(--text-muted);
-  border-bottom: 1px solid var(--border);
-  margin-bottom: 4px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.context-menu button {
-  display: block;
-  width: 100%;
-  text-align: left;
-  background: none;
-  border: none;
-  padding: 5px 8px;
-}
-.context-menu button:hover:not(:disabled) {
-  background: var(--bg-active);
-}
-.context-menu button.danger {
-  color: var(--danger);
-}
-
-/* Buttons used across panes */
-button.primary {
-  color: #fff;
-  background: var(--accent);
-  border-color: var(--accent);
-}
-button.primary:hover:not(:disabled) {
-  background: #6f9cf2;
-}
-button.primary:disabled {
-  color: rgba(255, 255, 255, 0.7);
-  background: var(--bg-active);
-  border-color: var(--border);
-}
-
-/* Wiki links and rendered Markdown files */
-.markdown a.wikilink {
-  color: var(--accent);
-  text-decoration: none;
-  border-bottom: 1px dotted var(--accent);
-}
-.markdown a.wikilink:hover {
-  border-bottom-style: solid;
-}
-.markdown.inline,
-.markdown.inline > p {
-  display: inline;
-  margin: 0;
-}
-.text-pane {
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
-.text-toolbar {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 8px;
-  border-bottom: 1px solid var(--border);
-}
-.text-toolbar button {
-  font-size: 12px;
-}
-.text-pane .text-view,
-.text-rendered {
-  flex: 1;
-  overflow: auto;
-}
-.text-rendered {
-  padding: 16px 24px 32px;
-  max-width: 820px;
-}
-.properties {
-  margin: 0 0 18px;
-  padding: 8px 12px;
-  font-size: 12px;
-  background: var(--bg-sidebar);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-}
-.properties > div {
-  display: flex;
-  gap: 12px;
-  padding: 2px 0;
-}
-.properties dt {
-  width: 72px;
-  flex: none;
-  color: var(--text-muted);
-}
-.properties dd {
-  margin: 0;
-  overflow-wrap: anywhere;
-}
-
-/* Summary pane */
-.summary-pane {
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-  background: var(--bg);
-}
-.summary-header,
-.summary-actions {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 10px;
-  font-size: 12px;
-}
-.summary-header {
-  border-bottom: 1px solid var(--border);
-}
-.summary-header button {
-  font-size: 12px;
-}
-.summary-version {
-  white-space: nowrap;
-}
-.summary-origin {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  min-width: 0;
-}
-.summary-actions {
-  border-top: 1px solid var(--border);
-  padding: 8px 12px;
-}
-.summary-actions .ok {
-  color: #6fcf97;
-}
-.summary-actions .error {
-  color: var(--danger);
-}
+/* Too narrow for margin notes: keep the tint, drop the label. */
 .summary-body {
-  flex: 1;
-  overflow: auto;
-  padding: 16px 20px 24px;
+  container-type: inline-size;
 }
-.summary-meta {
-  font-size: 12px;
-  margin-bottom: 12px;
-}
-.summary-meta button:not(.link-button) {
-  font-size: 11px;
-  margin-left: 6px;
-}
-.summary-block {
-  margin: 0 0 10px;
-  padding-left: 10px;
-  border-left: 3px solid transparent;
-}
-.summary-block.changed {
-  border-left-color: var(--accent);
-  background: rgba(91, 141, 239, 0.07);
-}
-.summary-block .markdown > :last-child {
-  margin-bottom: 0;
-}
-.summary-edit {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 10px 12px;
-  min-height: 0;
-}
-.summary-edit textarea {
-  flex: 1;
-  resize: none;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 12.5px;
-  line-height: 1.5;
-  color: var(--text);
-  background: var(--bg-sidebar);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 10px 12px;
-}
-.summary-edit .row,
-.summary-start .row {
-  display: flex;
-  gap: 10px;
-  align-items: center;
-}
-.summary-start {
-  flex: 1;
-  overflow: auto;
-  padding: 20px 24px;
-  max-width: 560px;
-}
-.summary-start h2 {
-  font-size: 15px;
-  margin: 0 0 8px;
-}
-.summary-start form {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  margin-top: 16px;
-}
-.summary-start label {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-.summary-start label.checkbox {
-  flex-direction: row;
-  align-items: center;
-  gap: 6px;
-}
-.summary-start input[type="text"] {
-  font: inherit;
-  color: var(--text);
-  background: var(--bg-sidebar);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 6px 10px;
-}
-.summary-start .connection-notice {
-  padding: 8px 0;
-}
-.summary-status {
-  padding: 0 14px 6px;
-}
-.summary-start .summary-status {
-  padding: 12px 0 0;
-}
-label.checkbox.small {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  white-space: nowrap;
-}
-.summary-start code,
-.skill-editor code {
-  font-size: 12px;
-  background: var(--bg-hover);
-  padding: 1px 4px;
-  border-radius: 3px;
-}
-
-/* Settings: summary instructions */
-.skill-editor {
-  margin-top: 28px;
-  padding-top: 16px;
-  border-top: 1px solid var(--border);
-}
-.skill-editor textarea {
-  width: 100%;
-  min-height: 280px;
-  line-height: 1.5;
+@container (max-width: 560px) {
+  .summary-block.changed::before {
+    content: none;
+  }
 }

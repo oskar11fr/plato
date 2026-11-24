@@ -27,7 +27,7 @@ function makeComponents(onWikiLink?: (target: string) => void): Components {
         return (
           <a
             href="#"
-            className="wikilink"
+            className={/#page=\d+/.test(target) ? "wikilink cite" : "wikilink"}
             title={target}
             onClick={(e) => {
               e.preventDefault();

@@ -1,14 +1,10 @@
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { ask, open } from "@tauri-apps/plugin-dialog";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
-import {
-  DockviewReact,
-  themeAbyss,
-  type DockviewApi,
-  type DockviewReadyEvent,
-} from "dockview-react";
+import { DockviewReact, type DockviewApi, type DockviewReadyEvent, type DockviewTheme } from "dockview-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { dropDirAt, FileTree } from "./components/FileTree";
+import { FolderIcon, PlusIcon, RefreshIcon, SettingsIcon } from "./components/Icons";
 import { flushAnnotationSaves } from "./lib/annotations";
 import {
   importDropped,
@@ -28,6 +24,9 @@ import { isOpenable, openChat, openFile, openSettings, openSummary, paneComponen
 import "./App.css";
 
 const LAST_WORKSPACE_KEY = "plato.lastWorkspace";
+
+// dockview's light theme, recoloured from the app's tokens in App.css.
+const dockTheme: DockviewTheme = { name: "plato", className: "dockview-theme-light plato-dock" };
 const LAYOUT_VERSION = 1;
 
 // Per-device convenience only; the app works without it.
@@ -309,15 +308,15 @@ export default function App() {
             {workspace?.name ?? "No folder open"}
           </span>
           {workspace && (
-            <button className="icon-button" title="Refresh files" onClick={refreshTree}>
-              ↻
+            <button className="icon-button" title="Refresh files" aria-label="Refresh files" onClick={refreshTree}>
+              <RefreshIcon />
             </button>
           )}
-          <button className="icon-button" title="Open folder" onClick={chooseFolder}>
-            ⊕
+          <button className="icon-button" title="Open folder" aria-label="Open folder" onClick={chooseFolder}>
+            <FolderIcon />
           </button>
-          <button className="icon-button" title="Settings" onClick={() => api && openSettings(api)}>
-            ⚙
+          <button className="icon-button" title="Settings" aria-label="Settings" onClick={() => api && openSettings(api)}>
+            <SettingsIcon />
           </button>
         </header>
         {error && <div className="sidebar-error">{error}</div>}
@@ -338,7 +337,7 @@ export default function App() {
             <footer className="sidebar-footer">
               {status && <div className="sidebar-status">{status}</div>}
               <button className="add-files" onClick={addFiles} title="Copy files from your computer into this folder">
-                <span aria-hidden="true">+</span> Add files
+                <PlusIcon /> Add files
                 <span className="add-files-target">to {targetDir ? `${targetDir}/` : "workspace root"}</span>
               </button>
               {targetDir && (
@@ -372,7 +371,7 @@ export default function App() {
         </div>
       )}
       <main className="dock">
-        <DockviewReact components={paneComponents} onReady={onReady} theme={themeAbyss} />
+        <DockviewReact components={paneComponents} onReady={onReady} theme={dockTheme} />
       </main>
     </div>
   );

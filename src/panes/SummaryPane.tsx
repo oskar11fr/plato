@@ -25,9 +25,11 @@ import {
   INDEX_FILE,
   MAX_SOURCE_CHARS,
   MIN_SOURCE_CHARS,
+  pageTitle,
   parseDraft,
   revisionMessages,
   sourceLength,
+  splitTitle,
   summaryRequestMessage,
   summarySystemPrompt,
   versionChain,
@@ -263,11 +265,12 @@ export function SummaryPane({ params, containerApi }: IDockviewPanelProps<Summar
 
   const shown = draft?.versions[draft.current];
   const page = useMemo(() => (shown ? parseDraft(shown.text) : null), [shown]);
+  const body = useMemo(() => (page ? splitTitle(page.body) : null), [page]);
   const blocks = useMemo(() => {
-    if (!draft || !shown || !page || shown.basedOn === undefined) return null;
+    if (!draft || !shown || !body || shown.basedOn === undefined) return null;
     const before = draft.versions[shown.basedOn];
-    return before ? changedBlocks(parseDraft(before.text).body, page.body) : null;
-  }, [draft, shown, page]);
+    return before ? changedBlocks(splitTitle(parseDraft(before.text).body).rest, body.rest) : null;
+  }, [draft, shown, body]);
 
   if (!loaded || !auth) return <div className="pane pane-message muted">Loading…</div>;
 
@@ -395,19 +398,24 @@ export function SummaryPane({ params, containerApi }: IDockviewPanelProps<Summar
           </div>
         </div>
       ) : (
-        page && (
+        page &&
+        body && (
           <div className="summary-body">
-            <PageMetaLine meta={page.meta} docPath={docPath} onOpenSource={() => openFile(containerApi, docPath)} />
-            {shown?.note && <div className="chat-note">{shown.note}</div>}
-            {blocks && showChanges ? (
-              blocks.map((b, i) => (
-                <div key={i} className={b.changed ? "summary-block changed" : "summary-block"}>
-                  <Markdown text={b.block} onWikiLink={onWikiLink} />
-                </div>
-              ))
-            ) : (
-              <Markdown text={page.body} onWikiLink={onWikiLink} />
-            )}
+            <article className="reading">
+              <div className="kicker">Source summary</div>
+              <h1 className="reading-title">{body.title ?? pageTitle(page.meta, page.body, docPath)}</h1>
+              <PageMetaLine meta={page.meta} docPath={docPath} onOpenSource={() => openFile(containerApi, docPath)} />
+              {shown?.note && <div className="chat-note">{shown.note}</div>}
+              {blocks && showChanges ? (
+                blocks.map((b, i) => (
+                  <div key={i} className={b.changed ? "summary-block changed" : "summary-block"}>
+                    <Markdown text={b.block} onWikiLink={onWikiLink} />
+                  </div>
+                ))
+              ) : (
+                <Markdown text={body.rest} onWikiLink={onWikiLink} />
+              )}
+            </article>
           </div>
         )
       )}
@@ -485,11 +493,15 @@ function PageMetaLine({
 }) {
   const by = byline(meta);
   return (
-    <div className="summary-meta muted">
-      {by && <span title={meta.authors.join(", ")}>{by} · </span>}
-      Summary of{" "}
-      <button className="link-button" onClick={onOpenSource}>
-        {docPath}
+    <div className="reading-byline">
+      {by && (
+        <span className="byline-authors" title={meta.authors.join(", ")}>
+          {by}
+        </span>
+      )}
+      {by && " · "}
+      <button className="link-button source-link" onClick={onOpenSource} title={docPath}>
+        {docPath.split("/").pop()}
       </button>
     </div>
   );
@@ -497,12 +509,16 @@ function PageMetaLine({
 
 function StreamingView({ text, onStop, onWikiLink }: { text: string; onStop: () => void; onWikiLink: (t: string) => void }) {
   const { body } = parseDraft(text);
+  const { title, rest } = splitTitle(body);
   return (
     <div className="summary-body streaming">
-      <div className="summary-meta muted">
-        Writing… <button onClick={onStop}>Stop</button>
-      </div>
-      {body ? <Markdown text={body} onWikiLink={onWikiLink} /> : <p className="muted">Reading the document…</p>}
+      <article className="reading">
+        <div className="kicker">
+          Writing… <button className="link-button" onClick={onStop}>Stop</button>
+        </div>
+        {title && <h1 className="reading-title">{title}</h1>}
+        {body ? <Markdown text={rest} onWikiLink={onWikiLink} /> : <p className="muted">Reading the document…</p>}
+      </article>
     </div>
   );
 }

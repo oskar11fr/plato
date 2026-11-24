@@ -1,6 +1,6 @@
 import { ask as confirmDialog } from "@tauri-apps/plugin-dialog";
 import type { IDockviewPanelProps } from "dockview-react";
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { ModelPicker, SignInNotice, UsageFooter, useAssistant } from "../components/Assistant";
 import { PlanWelcome } from "../components/ChatGptSignIn";
 import { Markdown } from "../components/Markdown";
@@ -28,7 +28,7 @@ import {
   type LlmError,
 } from "../lib/llm";
 import { DEFAULT_PASSAGE_QUESTION, systemPrompt, userMessage } from "../lib/prompt";
-import { openFile, openSettings, type ChatParams } from "./open";
+import { openFile, openSettings, openWikiLink, type ChatParams } from "./open";
 
 /** A turn as shown in the pane; `model` is the model that actually answered. */
 interface Turn extends ChatMessage {
@@ -115,6 +115,8 @@ export function ChatPane({ params, api, containerApi }: IDockviewPanelProps<Chat
       offShow();
     };
   }, [params.docPath]);
+
+  const onWikiLink = useCallback((target: string) => openWikiLink(containerApi, target), [containerApi]);
 
   /** Show the passage in the PDF (opening it if needed). */
   function reveal(p: Passage) {
@@ -322,18 +324,25 @@ export function ChatPane({ params, api, containerApi }: IDockviewPanelProps<Chat
         )}
         {turns.map((t, i) => (
           <div key={i} className={`chat-turn ${t.role}`}>
-            {t.role === "assistant" && t.model && <div className="chat-meta">{t.model}</div>}
             {t.passage && <PassageQuote passage={t.passage} onReveal={() => reveal(t.passage!)} />}
-            {t.role === "assistant" && t.content ? (
-              <Markdown text={t.content} />
-            ) : (
-              <div className="chat-text">
-                {t.content || (running && i === turns.length - 1 && !t.error ? "…" : "")}
+            <div className="turn-row">
+              <span className="turn-label" aria-hidden="true">
+                {t.role === "user" ? "q." : "a."}
+              </span>
+              <div className="turn-body">
+                {t.role === "assistant" && t.content ? (
+                  <Markdown text={t.content} onWikiLink={onWikiLink} />
+                ) : (
+                  <div className="chat-text">
+                    {t.content || (running && i === turns.length - 1 && !t.error ? "…" : "")}
+                  </div>
+                )}
+                {t.role === "assistant" && t.model && <div className="chat-meta">{t.model}</div>}
+                {t.note && <div className="chat-note">{t.note}</div>}
+                {t.error && t.error.kind !== "cancelled" && <div className="chat-error">{t.error.message}</div>}
+                {t.error?.kind === "cancelled" && <div className="chat-note">Stopped.</div>}
               </div>
-            )}
-            {t.note && <div className="chat-note">{t.note}</div>}
-            {t.error && t.error.kind !== "cancelled" && <div className="chat-error">{t.error.message}</div>}
-            {t.error?.kind === "cancelled" && <div className="chat-note">Stopped.</div>}
+            </div>
           </div>
         ))}
         <div ref={bottomRef} />
@@ -394,7 +403,7 @@ function PassageQuote({ passage, onReveal }: { passage: Passage; onReveal: () =>
   return (
     <button className="chat-passage" onClick={onReveal} title="Show in the PDF">
       <span className="chat-passage-text">“{passage.quote}”</span>
-      <span className="chat-passage-source">p. {passage.page} ↗</span>
+      <span className="chat-passage-source">p. {passage.page}</span>
     </button>
   );
 }

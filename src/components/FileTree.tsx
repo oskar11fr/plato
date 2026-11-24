@@ -1,3 +1,4 @@
+import { ChevronIcon } from "./Icons";
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import type { TreeNode } from "../lib/backend";
 import { isOpenable } from "../panes/open";
@@ -131,7 +132,8 @@ function TreeItem(props: ItemProps) {
 
   if (node.kind === "dir") {
     const isTarget = node.path === targetDir;
-    const classes = ["tree-row"];
+    const classes = ["tree-row", "dir"];
+    if (depth === 0) classes.push("section");
     if (isTarget) classes.push("target");
     if (dropTarget === node.path) classes.push("drop-target");
     return (
@@ -147,7 +149,9 @@ function TreeItem(props: ItemProps) {
             onSelectDir(node.path);
           }}
         >
-          <span className="tree-caret">{expanded ? "▾" : "▸"}</span>
+          <span className="tree-caret">
+            <ChevronIcon open={expanded} />
+          </span>
           {node.name}
         </button>
         {expanded && (

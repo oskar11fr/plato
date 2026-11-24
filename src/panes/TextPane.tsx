@@ -4,6 +4,7 @@ import { Markdown } from "../components/Markdown";
 import { readTextFileOpt } from "../lib/backend";
 import { filesChanged } from "../lib/bus";
 import { parseFrontMatter } from "../lib/frontmatter";
+import { splitTitle } from "../lib/summary";
 import { openWikiLink, type FileParams } from "./open";
 
 const isMarkdown = (path: string) => /\.(md|markdown)$/i.test(path);
@@ -54,6 +55,7 @@ export function TextPane({ params, containerApi }: IDockviewPanelProps<FileParam
     );
   }
   const { front, body, hasFront } = parseFrontMatter(text);
+  const { title, rest } = splitTitle(body);
   return (
     <div className="pane text-pane">
       <div className="text-toolbar">
@@ -66,8 +68,11 @@ export function TextPane({ params, containerApi }: IDockviewPanelProps<FileParam
         <pre className="text-view">{text}</pre>
       ) : (
         <div className="text-rendered">
-          {hasFront && <Properties front={front} onWikiLink={onWikiLink} />}
-          <Markdown text={body} onWikiLink={onWikiLink} />
+          <article className="reading">
+            {title && <h1 className="reading-title">{title}</h1>}
+            {hasFront && <Properties front={front} onWikiLink={onWikiLink} />}
+            <Markdown text={title ? rest : body} onWikiLink={onWikiLink} />
+          </article>
         </div>
       )}
     </div>
@@ -79,7 +84,9 @@ function Properties({ front, onWikiLink }: { front: Record<string, unknown>; onW
   const rows = Object.entries(front).filter(([k, v]) => k !== "type" && v !== null && v !== "" && !(Array.isArray(v) && v.length === 0));
   if (rows.length === 0) return null;
   return (
-    <dl className="properties">
+    <details className="properties">
+      <summary>Properties</summary>
+      <dl>
       {rows.map(([k, v]) => (
         <div key={k}>
           <dt>{k}</dt>
@@ -94,6 +101,7 @@ function Properties({ front, onWikiLink }: { front: Record<string, unknown>; onW
           </dd>
         </div>
       ))}
-    </dl>
+      </dl>
+    </details>
   );
 }

@@ -182,6 +182,12 @@ export function pageTitle(meta: PageMeta, body: string, docPath: string): string
   return meta.title || body.match(/^# (.+)$/m)?.[1].trim() || (docPath.split("/").pop() ?? docPath);
 }
 
+/** A page body's leading `# Title` line, split from the rest. */
+export function splitTitle(body: string): { title: string | null; rest: string } {
+  const m = body.match(/^# (.+)(?:\n+|$)/);
+  return m ? { title: m[1].trim(), rest: body.slice(m[0].length) } : { title: null, rest: body };
+}
+
 /** The draft text for a page (front matter with what the model may change, then the body). */
 export function draftText(meta: PageMeta, body: string): string {
   return `${serializeFrontMatter([
