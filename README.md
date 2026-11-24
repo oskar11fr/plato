@@ -64,6 +64,33 @@ the saved turn keeps the quote as a blockquote cited with
 `[[paper.pdf#page=N|…]]` and the highlight id in its marker. Clicking the
 quote jumps to the highlight; clicking a highlight offers **Show in chat**.
 
+## Wiki summaries
+
+**Summarize** in a PDF's toolbar opens a summary pane. The model reads the
+whole document (with an optional focus and the passages you highlighted) and
+writes a wiki page. Ask for changes, or **Edit** the text by hand; every
+version is kept (◀ ▶), and **Show changes** marks what a revision changed.
+Nothing reaches the wiki until **Save to wiki**:
+
+```
+wiki/index.md                 list of source pages (rewritten on each save)
+wiki/sources/<title-slug>.md  one page per document
+```
+
+A page has front matter (`type`, `title`, `authors`, `year`,
+`source: "[[paper.pdf]]"`, `created`, `updated`, `model`), cites pages as
+`[[paper.pdf#page=N|p. N]]`, and links concepts as `[[concept]]` (meant for
+`wiki/concepts/`, which wiki generation will fill). Links open in the app:
+a page citation scrolls the PDF to that page. Drafts live in
+`.reader/drafts/<document>/summary.json` until discarded; moving a PDF moves
+its draft and updates links to it throughout `wiki/`.
+
+What a summary should contain is a *skill*: `src/skills/summarize-source/SKILL.md`
+(Agent Skills layout: `name` and `description` front matter, then the
+instructions). Settings → **Summary instructions** edits it per workspace
+(saved to `.reader/skills/summarize-source/SKILL.md`). The page format the app
+parses is fixed in `src/lib/summary.ts`, so custom instructions can't break it.
+
 ## Layout
 
 - `src-tauri/src/workspace.rs` – all file access, scoped to the open folder
@@ -71,4 +98,6 @@ quote jumps to the highlight; clicking a highlight offers **Show in chat**.
   provider and `openai/auth.rs` the Sign in with ChatGPT flow
 - `src/pdf/` – pdf.js viewer, highlight anchoring (quote + prefix/suffix + rects)
 - `src/lib/chats.ts` – chat file format, listing, saving
-- `src/panes/` – dockview pane types (PDF, text, chat, settings)
+- `src/lib/summary.ts`, `src/lib/wiki.ts` – summary prompts, drafts, wiki pages and index
+- `src/skills/` – built-in skills (instructions for AI tasks)
+- `src/panes/` – dockview pane types (PDF, text, chat, summary, settings)

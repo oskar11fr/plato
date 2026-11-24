@@ -7,6 +7,7 @@
 // in order. A machine-readable HTML comment opens each turn, so the file reads
 // naturally as Markdown, survives answers that contain their own headings,
 // and can later be turned into wiki pages with links back to the papers.
+import { parseFrontMatter, serializeFrontMatter, str } from "./frontmatter";
 import { listDir, READER_DIR, readTextFile, readTextFileOpt, writeTextFile, deleteAppFile } from "./backend";
 
 export const CHATS_DIR = `${READER_DIR}/chats`;
@@ -97,7 +98,7 @@ export function serializeChat(chat: Chat): string {
     ["updated", chat.updated],
     ["models", models],
   ];
-  const lines = ["---", ...front.map(([k, v]) => `${k}: ${JSON.stringify(v)}`), "---", ""];
+  const lines = [serializeFrontMatter(front)];
   lines.push(`# ${chat.title.replace(/\n/g, " ")}`, "", `Chat about [[${chat.source}]].`, "");
   for (const turn of chat.turns) {
     const meta: Record<string, string | number> = { role: turn.role, at: turn.at };
@@ -141,24 +142,7 @@ function splitPassage(content: string): { quote: string; rest: string } {
 /** Parse a chat file. Tolerates hand edits: unknown front matter keys,
  *  missing headings, and text outside turns (which is ignored). */
 export function parseChat(text: string): Chat {
-  const normalized = text.replace(/\r\n/g, "\n");
-  const front: Record<string, unknown> = {};
-  let body = normalized;
-  const fm = normalized.match(/^---\n([\s\S]*?)\n---\n?/);
-  if (fm) {
-    body = normalized.slice(fm[0].length);
-    for (const line of fm[1].split("\n")) {
-      const i = line.indexOf(":");
-      if (i <= 0) continue;
-      const key = line.slice(0, i).trim();
-      const raw = line.slice(i + 1).trim();
-      try {
-        front[key] = JSON.parse(raw);
-      } catch {
-        front[key] = raw.replace(/^["']|["']$/g, ""); // plain YAML scalar from a hand edit
-      }
-    }
-  }
+  const { front, body } = parseFrontMatter(text);
 
   const turns: ChatTurn[] = [];
   let current: { meta: Record<string, unknown>; lines: string[] } | null = null;
@@ -197,7 +181,6 @@ export function parseChat(text: string): Chat {
   }
   finish();
 
-  const str = (v: unknown, fallback: string) => (typeof v === "string" ? v : fallback);
   return {
     id: str(front.id, newChatId()),
     title: str(front.title, "Untitled chat"),

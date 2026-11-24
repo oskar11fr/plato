@@ -5,16 +5,19 @@
 /** Fenced blocks (``` or ~~~, possibly unclosed while streaming) and inline code. */
 const CODE = /(^|\n)(```|~~~)[^\n]*\n[\s\S]*?(?:\n\2[^\n]*(?=\n|$)|$)|`+[^`\n]*`+/g;
 
-export function normalizeMathDelimiters(markdown: string): string {
+/** Apply `fn` to the parts of `markdown` outside code. */
+export function outsideCode(markdown: string, fn: (text: string) => string): string {
   let out = "";
   let last = 0;
   for (const match of markdown.matchAll(CODE)) {
-    out += convert(markdown.slice(last, match.index));
+    out += fn(markdown.slice(last, match.index));
     out += match[0];
     last = match.index + match[0].length;
   }
-  return out + convert(markdown.slice(last));
+  return out + fn(markdown.slice(last));
 }
+
+export const normalizeMathDelimiters = (markdown: string) => outsideCode(markdown, convert);
 
 function convert(text: string): string {
   return (

@@ -41,8 +41,19 @@ export interface PassageAttachment {
 /** Ask AI: attach a passage to the document's chat. */
 export const passageToChat = new PaneChannel<PassageAttachment>();
 
-/** Scroll a document's viewer to a highlight. */
-export const revealHighlight = new PaneChannel<{ highlightId: string; page: number }>();
+/** Scroll a document's viewer to a highlight, or just to a page. */
+export const revealHighlight = new PaneChannel<{ highlightId?: string; page: number }>();
 
 /** Show a specific saved chat in the document's chat pane. */
 export const showChat = new PaneChannel<string>();
+
+/** A pane changed files in the workspace (e.g. saved a wiki page); the sidebar refreshes. */
+type FilesListener = (changed: string[]) => void;
+const filesListeners = new Set<FilesListener>();
+export const filesChanged = {
+  emit: (changed: string[]) => filesListeners.forEach((l) => l(changed)),
+  subscribe(listener: FilesListener): () => void {
+    filesListeners.add(listener);
+    return () => void filesListeners.delete(listener);
+  },
+};

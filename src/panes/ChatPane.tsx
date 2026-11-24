@@ -1,7 +1,8 @@
 import { ask as confirmDialog } from "@tauri-apps/plugin-dialog";
 import type { IDockviewPanelProps } from "dockview-react";
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { ContinueWithChatGPT, PlanWelcome, useSignIn } from "../components/ChatGptSignIn";
+import { ModelPicker, SignInNotice, UsageFooter, useAssistant } from "../components/Assistant";
+import { PlanWelcome } from "../components/ChatGptSignIn";
 import { Markdown } from "../components/Markdown";
 import { passageToChat, revealHighlight, showChat, type PassageAttachment } from "../lib/bus";
 import {
@@ -17,19 +18,14 @@ import {
   type Passage,
 } from "../lib/chats";
 import {
-  account,
   ask,
-  authStatus,
-  listModels,
   openManageUsage,
   SIGN_IN_ERRORS,
   toLlmError,
   USAGE_LIMIT,
   type AskHandle,
-  type AuthStatus,
   type ChatMessage,
   type LlmError,
-  type ModelInfo,
 } from "../lib/llm";
 import { DEFAULT_PASSAGE_QUESTION, systemPrompt, userMessage } from "../lib/prompt";
 import { openFile, openSettings, type ChatParams } from "./open";
@@ -43,20 +39,6 @@ interface Turn extends ChatMessage {
   error?: LlmError;
 }
 
-const MODEL_KEY = "plato.model";
-function savedModel(): string | null {
-  try {
-    return localStorage.getItem(MODEL_KEY);
-  } catch {
-    return null;
-  }
-}
-function saveModel(id: string) {
-  try {
-    localStorage.setItem(MODEL_KEY, id);
-  } catch {}
-}
-
 const emptyChat = (docPath: string): Chat => {
   const t = nowIso();
   return { id: newChatId(), title: "New chat", source: docPath, created: t, updated: t, turns: [] };
@@ -68,10 +50,7 @@ const toTurns = (chat: Chat): Turn[] =>
 /** One pane per document. It shows one chat at a time; each chat is saved to
  *  .reader/chats/<document>/ after every completed answer. */
 export function ChatPane({ params, api, containerApi }: IDockviewPanelProps<ChatParams>) {
-  const [auth, setAuth] = useState<AuthStatus | null>(null);
-  const [welcome, setWelcome] = useState(false);
-  const [models, setModels] = useState<ModelInfo[]>([]);
-  const [model, setModel] = useState<string | null>(null);
+  const { auth, checkAuth, welcome, closeWelcome, models, model, setModel } = useAssistant();
   const [turns, setTurns] = useState<Turn[]>([]);
   const [input, setInput] = useState("");
   const [running, setRunning] = useState<AskHandle | null>(null);
@@ -222,28 +201,6 @@ export function ChatPane({ params, api, containerApi }: IDockviewPanelProps<Chat
     }
   }
 
-  function checkAuth() {
-    authStatus().then(setAuth, (e) =>
-      setAuth({ ready: false, mode: "chatgpt", kind: "unknown", message: toLlmError(e).message, account: null }),
-    );
-    account().then((a) => setWelcome(a.showWelcome), () => {});
-  }
-
-  useEffect(checkAuth, []);
-
-  // The model picker lists the signed-in account's models.
-  useEffect(() => {
-    if (!auth?.ready) return;
-    listModels().then(
-      (list) => {
-        setModels(list);
-        const saved = savedModel();
-        setModel(list.some((m) => m.id === saved) ? saved : (list[0]?.id ?? null));
-      },
-      () => setModels([]),
-    );
-  }, [auth?.ready, auth?.account]);
-
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ block: "end" });
   }, [turns]);
@@ -335,7 +292,7 @@ export function ChatPane({ params, api, containerApi }: IDockviewPanelProps<Chat
 
   return (
     <div className="chat-pane">
-      {welcome && <PlanWelcome onClose={() => setWelcome(false)} />}
+      {welcome && <PlanWelcome onClose={closeWelcome} />}
       <div className="chat-header">
         <select
           aria-label="Chats for this document"
@@ -425,84 +382,9 @@ export function ChatPane({ params, api, containerApi }: IDockviewPanelProps<Chat
         )}
       </form>
       <div className="chat-footer">
-        {models.length > 0 && (
-          <select
-            value={model ?? ""}
-            aria-label="Model"
-            onChange={(e) => {
-              setModel(e.target.value);
-              saveModel(e.target.value);
-            }}
-          >
-            {models.map((m) => (
-              <option key={m.id} value={m.id}>
-                {m.displayName}
-              </option>
-            ))}
-          </select>
-        )}
-        <span className="muted">Using ChatGPT plan</span>
-        <button className="link-button" onClick={() => void openManageUsage()}>
-          Manage usage
-        </button>
+        <ModelPicker models={models} model={model} onChange={setModel} />
+        <UsageFooter />
       </div>
-    </div>
-  );
-}
-
-function SignInNotice({
-  status,
-  onSignedIn,
-  onOpenSettings,
-}: {
-  status: AuthStatus;
-  onSignedIn: () => void;
-  onOpenSettings: () => void;
-}) {
-  const signIn = useSignIn(onSignedIn);
-  const planOff = status.kind === "plan_not_enabled";
-
-  return (
-    <div className="pane pane-message connection-notice">
-      {planOff ? (
-        <>
-          <p>
-            <strong>Use your ChatGPT plan</strong>
-          </p>
-          <p className="muted">
-            You're signed in{status.account ? ` as ${status.account}` : ""}, but Plato isn't allowed to use your
-            ChatGPT plan yet. Complete eligible AI requests in this app with usage included in your ChatGPT plan.
-          </p>
-          <ContinueWithChatGPT
-            pending={signIn.pending}
-            onClick={() => signIn.start("enablePlan")}
-            onCancel={signIn.cancel}
-            label="Allow in ChatGPT"
-          />
-        </>
-      ) : status.kind === "signin_required" ? (
-        <>
-          <p>
-            <strong>Sign in to ask questions</strong>
-          </p>
-          <p className="muted">Answers use your ChatGPT plan. No API key needed.</p>
-          <ContinueWithChatGPT pending={signIn.pending} onClick={() => signIn.start("continue")} onCancel={signIn.cancel} />
-        </>
-      ) : (
-        <>
-          <p>
-            <strong>Not connected</strong>
-          </p>
-          <p className="muted">{status.message}</p>
-          <button onClick={onSignedIn}>Check again</button>
-        </>
-      )}
-      {signIn.error && <p className="error">{signIn.error}</p>}
-      <p>
-        <button className="link-button" onClick={onOpenSettings}>
-          Account settings…
-        </button>
-      </p>
     </div>
   );
 }

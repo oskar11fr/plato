@@ -1,5 +1,6 @@
 import type { DockviewApi } from "dockview-react";
-import { showChat } from "../lib/bus";
+import { revealHighlight, showChat } from "../lib/bus";
+import { resolveWikiLink } from "../lib/wikilinks";
 
 export interface FileParams {
   path: string;
@@ -53,6 +54,36 @@ export function openChat(api: DockviewApi, docPath: string, chatPath?: string) {
     params: chatPath ? { docPath, chatPath } : { docPath },
     position: docPanel ? { referencePanel: docPanel, direction: "right" } : undefined,
   });
+}
+
+export interface SummaryParams {
+  docPath: string;
+}
+
+/** Open the document's summary pane beside it. */
+export function openSummary(api: DockviewApi, docPath: string) {
+  const id = `summary:${docPath}`;
+  const existing = api.getPanel(id);
+  if (existing) {
+    existing.api.setActive();
+    return;
+  }
+  const docPanel = api.getPanel(`file:${docPath}`);
+  api.addPanel<SummaryParams>({
+    id,
+    component: "summary",
+    title: `Summary · ${basename(docPath)}`,
+    params: { docPath },
+    position: docPanel ? { referencePanel: docPanel, direction: "right" } : undefined,
+  });
+}
+
+/** Follow a [[wiki link]]: open the file, at the cited page for a PDF. */
+export function openWikiLink(api: DockviewApi, target: string) {
+  const { path, page } = resolveWikiLink(target);
+  if (!componentFor(path)) return;
+  openFile(api, path);
+  if (page) revealHighlight.emit(path, { page });
 }
 
 /** Open (or focus) the connection settings pane. */

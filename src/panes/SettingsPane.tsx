@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { ContinueWithChatGPT, PlanWelcome, useSignIn } from "../components/ChatGptSignIn";
 import { account, listModels, openManageUsage, signOut, toLlmError, type AccountInfo } from "../lib/llm";
+import { builtInSkill, loadSkill, resetSkill, saveSkillOverride, skillOverridePath, type Skill } from "../lib/skills";
 
 export function SettingsPane() {
   const [info, setInfo] = useState<AccountInfo | null>(null);
@@ -121,6 +122,80 @@ export function SettingsPane() {
 
       {signIn.error && <p className="error">{signIn.error}</p>}
       {notice && <p className={notice.ok ? "ok" : "error"}>{notice.text}</p>}
+
+      <SkillEditor />
     </div>
+  );
+}
+
+/** Edit the summary instructions for this workspace (saved in .reader/skills/). */
+function SkillEditor() {
+  const [skill, setSkill] = useState<Skill | null>(null);
+  const [text, setText] = useState("");
+  const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
+
+  function load() {
+    loadSkill("summarize-source").then(
+      (s) => {
+        setSkill(s);
+        setText(s.text);
+      },
+      (e) => setMessage({ ok: false, text: String(e) }),
+    );
+  }
+  useEffect(load, []);
+
+  if (!skill) return null;
+  const changed = text !== skill.text;
+
+  async function save() {
+    try {
+      if (text.trim() === builtInSkill("summarize-source").text.trim()) await resetSkill("summarize-source");
+      else await saveSkillOverride("summarize-source", text);
+      setMessage({ ok: true, text: "Saved. New summaries use these instructions." });
+      load();
+    } catch (e) {
+      setMessage({ ok: false, text: `Not saved: ${String(e)}` });
+    }
+  }
+
+  async function reset() {
+    try {
+      await resetSkill("summarize-source");
+      setMessage({ ok: true, text: "Back to the built-in instructions." });
+      load();
+    } catch (e) {
+      setMessage({ ok: false, text: String(e) });
+    }
+  }
+
+  return (
+    <section className="skill-editor">
+      <h2>Summary instructions</h2>
+      <p className="muted">
+        What the AI is told about writing a summary page: its sections, length and style. Changes apply to this
+        workspace{skill.origin === "workspace" ? (
+          <>
+            {" "}
+            and are saved in <code>{skillOverridePath("summarize-source")}</code>
+          </>
+        ) : null}
+        . The page format (front matter, page citations, [[links]]) is fixed by the app.
+      </p>
+      <textarea value={text} onChange={(e) => setText(e.target.value)} spellCheck rows={18} aria-label="Summary instructions" />
+      <div className="row actions">
+        <button onClick={() => void save()} disabled={!changed}>
+          Save
+        </button>
+        <button onClick={() => setText(skill.text)} disabled={!changed}>
+          Undo changes
+        </button>
+        <button onClick={() => void reset()} disabled={skill.origin === "built-in"}>
+          Use built-in instructions
+        </button>
+        <span className="muted">{skill.origin === "workspace" ? "Customized" : "Built-in"}</span>
+      </div>
+      {message && <p className={message.ok ? "ok" : "error"}>{message.text}</p>}
+    </section>
   );
 }

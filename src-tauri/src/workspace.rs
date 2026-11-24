@@ -223,12 +223,15 @@ fn copy_into(root: &Path, dest: &Path, sources: &[PathBuf]) -> std::io::Result<V
 }
 
 /// `dir/name`, or `dir/stem (2).ext`, `dir/stem (3).ext`, … if taken. A name
-/// also counts as taken when app data (highlights, chats) still exists for it,
+/// also counts as taken when app data (highlights, chats, drafts) still exists for it,
 /// e.g. from a file moved to the Trash, so a new file never inherits it.
 fn unique_path(root: &Path, dir: &Path, name: &Path) -> PathBuf {
     let taken = |p: &Path| {
         let rel = rel_path(root, p);
-        p.exists() || annotations_file(root, &rel).exists() || chats_dir(root, &rel).exists()
+        p.exists()
+            || annotations_file(root, &rel).exists()
+            || chats_dir(root, &rel).exists()
+            || drafts_dir(root, &rel).exists()
     };
     let candidate = dir.join(name);
     if !taken(&candidate) {
@@ -249,6 +252,45 @@ fn annotations_file(root: &Path, rel: &str) -> PathBuf {
 fn chats_dir(root: &Path, rel: &str) -> PathBuf {
     root.join(READER_DIR).join("chats").join(rel)
 }
+fn drafts_dir(root: &Path, rel: &str) -> PathBuf {
+    root.join(READER_DIR).join("drafts").join(rel)
+}
+
+/// The visible wiki folder; its pages link to documents with [[path]].
+const WIKI_DIR: &str = "wiki";
+
+/// Markdown files under `dir`, recursively (hidden folders skipped).
+fn markdown_files(dir: &Path) -> std::io::Result<Vec<PathBuf>> {
+    let mut out = Vec::new();
+    if !dir.is_dir() {
+        return Ok(out);
+    }
+    for entry in fs::read_dir(dir)? {
+        let p = entry?.path();
+        let hidden = p.file_name().is_some_and(|n| n.to_string_lossy().starts_with('.'));
+        if hidden {
+            continue;
+        }
+        if p.is_dir() {
+            out.extend(markdown_files(&p)?);
+        } else if p.extension().is_some_and(|e| e == "md") {
+            out.push(p);
+        }
+    }
+    Ok(out)
+}
+
+/// Rewrite links to a moved document in the given Markdown files.
+fn retarget_files(files: &[PathBuf], old_rel: &str, new_rel: &str) -> std::io::Result<()> {
+    for p in files {
+        let text = fs::read_to_string(p)?;
+        let updated = retarget_chat(&text, old_rel, new_rel);
+        if updated != text {
+            fs::write(p, updated)?;
+        }
+    }
+    Ok(())
+}
 
 /// Copy files dropped onto the app (from Finder) into a workspace folder.
 /// Only paths from the latest OS drop are accepted.
@@ -264,8 +306,9 @@ pub fn import_dropped(paths: Vec<String>, dest_dir: String, ws: State<Workspace>
     copy_into(&root, &dest, &sources).map_err(|e| e.to_string())
 }
 
-/// Move a file to another workspace folder. Its highlights and chats move
-/// with it, and the chats' links to it are updated. Returns the new path.
+/// Move a file to another workspace folder. Its highlights, chats and drafts
+/// move with it, and links to it in its chats and in the wiki are updated.
+/// Returns the new path.
 #[tauri::command]
 pub fn move_file(path: String, dest_dir: String, ws: State<Workspace>) -> Result<String, String> {
     if is_app_path(&path) {
@@ -301,21 +344,19 @@ fn move_within(root: &Path, src: &Path, dest: &Path) -> std::io::Result<String> 
     if old_chats.is_dir() {
         fs::create_dir_all(new_chats.parent().expect("has parent"))?;
         fs::rename(&old_chats, &new_chats)?;
-        for entry in fs::read_dir(&new_chats)? {
-            let p = entry?.path();
-            if p.extension().is_some_and(|e| e == "md") {
-                let text = fs::read_to_string(&p)?;
-                let updated = retarget_chat(&text, &old_rel, &new_rel);
-                if updated != text {
-                    fs::write(&p, updated)?;
-                }
-            }
-        }
+        retarget_files(&markdown_files(&new_chats)?, &old_rel, &new_rel)?;
     }
+    let (old_drafts, new_drafts) = (drafts_dir(root, &old_rel), drafts_dir(root, &new_rel));
+    if old_drafts.is_dir() {
+        fs::create_dir_all(new_drafts.parent().expect("has parent"))?;
+        fs::rename(&old_drafts, &new_drafts)?;
+    }
+    // Wiki pages that summarize or cite the document.
+    retarget_files(&markdown_files(&root.join(WIKI_DIR))?, &old_rel, &new_rel)?;
     Ok(new_rel)
 }
 
-/// Point a chat file at a document's new path: the `source:` front matter
+/// Point a chat or wiki file at a document's new path: the `source:` front matter
 /// line and `[[old]]` / `[[old#…]]` / `[[old|…]]` links. Everything else,
 /// including the user's own edits, is left as it is.
 fn retarget_chat(text: &str, old: &str, new: &str) -> String {
@@ -477,6 +518,29 @@ mod tests {
 
         // Moving into the folder it is already in changes nothing.
         assert_eq!(move_within(&root, &root.join("papers/a.pdf"), &root.join("papers")).unwrap(), "papers/a.pdf");
+    }
+
+    #[test]
+    fn move_updates_wiki_links_and_drafts() {
+        let root = temp_root("move-wiki");
+        fs::create_dir_all(root.join("papers")).unwrap();
+        fs::write(root.join("a.pdf"), b"pdf").unwrap();
+        fs::create_dir_all(root.join(".reader/drafts/a.pdf")).unwrap();
+        fs::write(root.join(".reader/drafts/a.pdf/summary.json"), "{}").unwrap();
+        fs::create_dir_all(root.join("wiki/sources")).unwrap();
+        let page = "---\ntype: \"source-summary\"\nsource: \"[[a.pdf]]\"\n---\n\n# A\n\nSee [[a.pdf#page=3|p. 3]]. Not [[a.pdfx]].\n";
+        fs::write(root.join("wiki/sources/a.md"), page).unwrap();
+        fs::write(root.join("wiki/index.md"), "- [[wiki/sources/a|A]]\n").unwrap();
+
+        let new = move_within(&root, &root.join("a.pdf"), &root.join("papers")).unwrap();
+        assert_eq!(new, "papers/a.pdf");
+        assert!(root.join(".reader/drafts/papers/a.pdf/summary.json").is_file());
+        assert!(!root.join(".reader/drafts/a.pdf").exists());
+        let moved = fs::read_to_string(root.join("wiki/sources/a.md")).unwrap();
+        assert!(moved.contains("source: \"[[papers/a.pdf]]\""));
+        assert!(moved.contains("[[papers/a.pdf#page=3|p. 3]]"));
+        assert!(moved.contains("[[a.pdfx]]"), "other targets are left alone");
+        assert_eq!(fs::read_to_string(root.join("wiki/index.md")).unwrap(), "- [[wiki/sources/a|A]]\n");
     }
 
     #[test]

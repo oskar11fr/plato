@@ -23,7 +23,8 @@ import {
   type TreeNode,
   type WorkspaceInfo,
 } from "./lib/backend";
-import { isOpenable, openChat, openFile, openSettings, paneComponents, type ChatParams } from "./panes";
+import { filesChanged } from "./lib/bus";
+import { isOpenable, openChat, openFile, openSettings, openSummary, paneComponents, type ChatParams } from "./panes";
 import "./App.css";
 
 const LAST_WORKSPACE_KEY = "plato.lastWorkspace";
@@ -116,7 +117,7 @@ export default function App() {
       }, 500);
     });
     const activeSub = api.onDidActivePanelChange(({ panel }) => {
-      // File panes carry `path`; a chat pane highlights its document.
+      // File panes carry `path`; chat and summary panes highlight their document.
       const params = panel?.params as { path?: string; docPath?: string } | undefined;
       setActivePath(params?.path ?? params?.docPath ?? null);
     });
@@ -183,11 +184,13 @@ export default function App() {
   async function closePanesFor(path: string) {
     const filePanel = api?.getPanel(`file:${path}`);
     const chatPanel = api?.getPanel(`chat:${path}`);
+    const summaryPanel = api?.getPanel(`summary:${path}`);
     const chatPath = (chatPanel?.params as ChatParams | undefined)?.chatPath;
     filePanel?.api.close();
     chatPanel?.api.close();
+    summaryPanel?.api.close();
     await flushAnnotationSaves();
-    return { file: !!filePanel, chat: !!chatPanel, chatPath };
+    return { file: !!filePanel, chat: !!chatPanel, summary: !!summaryPanel, chatPath };
   }
 
   const moveTo = useCallback(
@@ -205,9 +208,11 @@ export default function App() {
           const chatPath = open.chatPath?.replace(`chats/${path}/`, `chats/${moved}/`);
           openChat(api, moved, chatPath);
         }
+        if (open.summary) openSummary(api, moved);
       } catch (e) {
         setError(String(e));
-        if (open.file) openPath(path); // nothing moved; restore the pane
+        if (open.file) openPath(path); // nothing moved; restore the panes
+        if (open.summary) openSummary(api, path);
       }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps -- helpers read current state
@@ -269,6 +274,13 @@ export default function App() {
       unlisten?.();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- helpers read current state
+  }, [workspace]);
+
+  // Panes that write files (e.g. a saved wiki page) show up in the tree.
+  useEffect(() => {
+    if (!workspace) return;
+    return filesChanged.subscribe(() => void refreshTree());
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- refreshTree reads current state
   }, [workspace]);
 
   // Close the file menu on any outside click, scroll or Escape.

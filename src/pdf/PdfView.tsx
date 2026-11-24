@@ -23,12 +23,14 @@ import {
 import { revealHighlight } from "../lib/bus";
 import { findChatForHighlight } from "../lib/chats";
 import { loadPdfjs } from "./pdfjs";
+import { pageTextOf } from "./text";
 
 interface Props {
   path: string;
   /** Ask AI about a highlight; `pageText` is the full text of its page. */
   onAskAi: (highlight: Highlight, pageText: string) => void;
   onOpenChat: () => void;
+  onSummarize: () => void;
   /** Open a saved chat (one that discusses a clicked highlight). */
   onShowChat: (chatPath: string) => void;
 }
@@ -53,7 +55,7 @@ interface Popover {
 const MIN_SCALE = 0.25;
 const MAX_SCALE = 5;
 
-export function PdfView({ path, onAskAi, onOpenChat, onShowChat }: Props) {
+export function PdfView({ path, onAskAi, onOpenChat, onSummarize, onShowChat }: Props) {
   const paneRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const viewerRef = useRef<HTMLDivElement>(null);
@@ -156,10 +158,10 @@ export function PdfView({ path, onAskAi, onOpenChat, onShowChat }: Props) {
     if (loading) return;
     return revealHighlight.subscribe(path, ({ highlightId, page }) => {
       const v = viewer.current;
-      const h = store.current?.highlights.find((x) => x.id === highlightId);
+      const h = highlightId ? store.current?.highlights.find((x) => x.id === highlightId) : undefined;
       if (!v) return;
-      v.scrollPageIntoView({ pageNumber: h?.page ?? page });
-      flashHighlight(containerRef.current!, highlightId);
+      v.scrollPageIntoView({ pageNumber: Math.min(Math.max(1, h?.page ?? page), v.pagesCount || 1) });
+      if (highlightId) flashHighlight(containerRef.current!, highlightId);
     });
   }, [path, loading]);
 
@@ -298,6 +300,9 @@ export function PdfView({ path, onAskAi, onOpenChat, onShowChat }: Props) {
             {detached} highlight{detached === 1 ? "" : "s"} not found
           </span>
         )}
+        <button onClick={onSummarize} title="Write a wiki page summarizing this document">
+          Summarize
+        </button>
         <button onClick={onOpenChat}>Chat</button>
       </div>
       <div
@@ -378,15 +383,7 @@ const pct = (n: number) => `${n * 100}%`;
 /** A page's text from pdf.js, with line breaks where the PDF has them. */
 async function pageText(viewer: PDFViewer, pageNumber: number): Promise<string> {
   const doc = viewer.pdfDocument;
-  if (!doc) return "";
-  const page = await doc.getPage(pageNumber);
-  const content = await page.getTextContent();
-  return content.items
-    .map((item) => ("str" in item ? item.str + (item.hasEOL ? "\n" : "") : ""))
-    .join("")
-    .replace(/[ \t]+/g, " ")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
+  return doc ? pageTextOf(doc, pageNumber) : "";
 }
 
 /** Scroll a highlight into view once its page is drawn, and flash it. */
