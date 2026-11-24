@@ -20,12 +20,17 @@ import {
   rangeToOffsets,
   readPageText,
 } from "./anchoring";
+import { revealHighlight } from "../lib/bus";
+import { findChatForHighlight } from "../lib/chats";
 import { loadPdfjs } from "./pdfjs";
 
 interface Props {
   path: string;
-  onAskAi: (highlight: Highlight) => void;
+  /** Ask AI about a highlight; `pageText` is the full text of its page. */
+  onAskAi: (highlight: Highlight, pageText: string) => void;
   onOpenChat: () => void;
+  /** Open a saved chat (one that discusses a clicked highlight). */
+  onShowChat: (chatPath: string) => void;
 }
 
 /** A single-page text selection waiting for Highlight / Ask AI. */
@@ -41,12 +46,14 @@ interface Popover {
   id: string;
   x: number;
   y: number;
+  /** A saved chat that discusses this highlight (looked up on click). */
+  chatPath?: string | null;
 }
 
 const MIN_SCALE = 0.25;
 const MAX_SCALE = 5;
 
-export function PdfView({ path, onAskAi, onOpenChat }: Props) {
+export function PdfView({ path, onAskAi, onOpenChat, onShowChat }: Props) {
   const paneRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const viewerRef = useRef<HTMLDivElement>(null);
@@ -144,6 +151,25 @@ export function PdfView({ path, onAskAi, onOpenChat }: Props) {
     return () => observer.disconnect();
   }, []);
 
+  // Scroll to a highlight when the chat asks for it (clicking a quote).
+  useEffect(() => {
+    if (loading) return;
+    return revealHighlight.subscribe(path, ({ highlightId, page }) => {
+      const v = viewer.current;
+      const h = store.current?.highlights.find((x) => x.id === highlightId);
+      if (!v) return;
+      v.scrollPageIntoView({ pageNumber: h?.page ?? page });
+      flashHighlight(containerRef.current!, highlightId);
+    });
+  }, [path, loading]);
+
+  /** Ask AI with the highlight's full page text as context. */
+  async function askAi(h: Highlight) {
+    const v = viewer.current;
+    const text = v ? await pageText(v, h.page).catch(() => "") : "";
+    onAskAi(h, text);
+  }
+
   function persist() {
     if (store.current) saveAnnotations(store.current).catch((e) => setError(String(e)));
   }
@@ -217,7 +243,12 @@ export function PdfView({ path, onAskAi, onOpenChat }: Props) {
         !h.detached &&
         h.rects.some(([x0, y0, x1, y1]) => x >= x0 && x <= x1 && y >= y0 && y <= y1),
     );
-    setPopover(hit ? { id: hit.id, ...paneOffset(e.clientX, e.clientY) } : null);
+    if (!hit) return setPopover(null);
+    setPopover({ id: hit.id, ...paneOffset(e.clientX, e.clientY) });
+    findChatForHighlight(path, hit.id).then(
+      (chatPath) => setPopover((p) => (p?.id === hit.id ? { ...p, chatPath } : p)),
+      () => {},
+    );
   }
 
   function deleteHighlight(id: string) {
@@ -289,7 +320,7 @@ export function PdfView({ path, onAskAi, onOpenChat }: Props) {
           <button
             onClick={() => {
               const h = createHighlight();
-              if (h) onAskAi(h);
+              if (h) void askAi(h);
             }}
           >
             Ask AI
@@ -301,11 +332,21 @@ export function PdfView({ path, onAskAi, onOpenChat }: Props) {
           <button
             onClick={() => {
               setPopover(null);
-              onAskAi(popoverHighlight);
+              void askAi(popoverHighlight);
             }}
           >
             Ask AI
           </button>
+          {popover.chatPath && (
+            <button
+              onClick={() => {
+                setPopover(null);
+                onShowChat(popover.chatPath!);
+              }}
+            >
+              Show in chat
+            </button>
+          )}
           <button onClick={() => deleteHighlight(popover.id)}>Delete</button>
         </div>
       )}
@@ -333,6 +374,35 @@ function pageBox(inside: Element): DOMRect {
 const countDetached = (s: AnnotationFile) => s.highlights.filter((h) => h.detached).length;
 
 const pct = (n: number) => `${n * 100}%`;
+
+/** A page's text from pdf.js, with line breaks where the PDF has them. */
+async function pageText(viewer: PDFViewer, pageNumber: number): Promise<string> {
+  const doc = viewer.pdfDocument;
+  if (!doc) return "";
+  const page = await doc.getPage(pageNumber);
+  const content = await page.getTextContent();
+  return content.items
+    .map((item) => ("str" in item ? item.str + (item.hasEOL ? "\n" : "") : ""))
+    .join("")
+    .replace(/[ \t]+/g, " ")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+/** Scroll a highlight into view once its page is drawn, and flash it. */
+function flashHighlight(container: HTMLElement, id: string, tries = 40) {
+  const els = container.querySelectorAll<HTMLElement>(`.plato-hl[data-id="${CSS.escape(id)}"]`);
+  if (els.length === 0) {
+    if (tries > 0) requestAnimationFrame(() => flashHighlight(container, id, tries - 1));
+    return;
+  }
+  els[0].scrollIntoView({ block: "center", behavior: "smooth" });
+  els.forEach((el) => {
+    el.classList.remove("flash");
+    void el.offsetWidth; // restart the animation
+    el.classList.add("flash");
+  });
+}
 
 /** (Re)draw one page's highlights. pdf.js clears unknown layers on re-render. */
 function drawHighlights(viewer: PDFViewer, pageNumber: number, highlights: Highlight[]) {

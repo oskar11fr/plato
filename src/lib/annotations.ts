@@ -57,3 +57,6 @@ export async function sha256(bytes: Uint8Array): Promise<string> {
 }
 
 export const newHighlightId = () => `hl-${crypto.randomUUID().slice(0, 8)}`;
+
+/** Resolves once every queued annotation save has been written. */
+export const flushAnnotationSaves = () => saveQueue.then(() => undefined);

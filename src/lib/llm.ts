@@ -1,9 +1,13 @@
-// Typed wrappers over the Rust LLM commands. Keys never reach this side:
-// the backend reads them from the OS keychain.
+// Typed wrappers over the Rust LLM commands. Credentials never reach this
+// side: the backend holds the ChatGPT tokens and refreshes them.
 import { Channel, invoke } from "@tauri-apps/api/core";
+import { openUrl } from "@tauri-apps/plugin-opener";
 
-export type ProviderId = "anthropic";
-export const DEFAULT_PROVIDER: ProviderId = "anthropic";
+export type ProviderId = "openai";
+export const DEFAULT_PROVIDER: ProviderId = "openai";
+
+export const MANAGE_USAGE_URL = "https://chatgpt.com/settings/usage";
+export const openManageUsage = () => openUrl(MANAGE_USAGE_URL);
 
 export interface ChatMessage {
   role: "user" | "assistant";
@@ -11,12 +15,11 @@ export interface ChatMessage {
 }
 
 export interface ChatRequest {
-  /** Omit to use the provider's default model. */
+  /** Omit to use the account's default model. */
   model?: string;
   system: string;
   messages: ChatMessage[];
-  maxTokens?: number;
-  effort?: "low" | "medium" | "high" | "xhigh" | "max";
+  effort?: "low" | "medium" | "high";
 }
 
 export interface Usage {
@@ -29,20 +32,37 @@ export interface Usage {
 export type StreamEvent =
   | { type: "started"; model: string }
   | { type: "textDelta"; text: string }
-  | { type: "fallback"; from: string; to: string }
   | { type: "finished"; stopReason: string | null; usage: Usage };
 
 export interface LlmError {
-  /** "missing_key", "authentication_error", "rate_limit_error", "cancelled", ... */
+  /** "signin_required", "plan_not_enabled", "subscription_sharing_usage_limit_exceeded", "cancelled", ... */
   kind: string;
   message: string;
 }
+
+export const USAGE_LIMIT = "subscription_sharing_usage_limit_exceeded";
+/** Errors that mean the account needs attention before asking again. */
+export const SIGN_IN_ERRORS = new Set([
+  "signin_required",
+  "plan_not_enabled",
+  "subscription_sharing_invalid_user",
+  "invalid_client",
+]);
 
 export interface AskHandle {
   /** Resolves when the reply is complete; rejects with an LlmError. */
   done: Promise<void>;
   cancel: () => void;
 }
+
+export function toLlmError(e: unknown): LlmError {
+  if (e && typeof e === "object" && "kind" in e && "message" in e) return e as LlmError;
+  return { kind: "unknown", message: String(e) };
+}
+
+const rethrow = (e: unknown): never => {
+  throw toLlmError(e);
+};
 
 export function ask(
   request: ChatRequest,
@@ -52,27 +72,52 @@ export function ask(
   const requestId = crypto.randomUUID();
   const channel = new Channel<StreamEvent>();
   channel.onmessage = onEvent;
-  const done = invoke<void>("llm_ask", { provider, requestId, request, onEvent: channel }).catch(
-    (e: unknown) => {
-      throw toLlmError(e);
-    },
-  );
+  const done = invoke<void>("llm_ask", { provider, requestId, request, onEvent: channel }).catch(rethrow);
   return { done, cancel: () => void invoke("llm_cancel", { requestId }) };
 }
 
-export function toLlmError(e: unknown): LlmError {
-  if (e && typeof e === "object" && "kind" in e && "message" in e) return e as LlmError;
-  return { kind: "unknown", message: String(e) };
+export interface AuthStatus {
+  ready: boolean;
+  mode: string;
+  kind: string | null;
+  message: string | null;
+  account: string | null;
 }
 
-export const hasApiKey = (provider: ProviderId = DEFAULT_PROVIDER) =>
-  invoke<boolean>("has_api_key", { provider });
+export interface ModelInfo {
+  id: string;
+  displayName: string;
+}
 
-export const setApiKey = (key: string, provider: ProviderId = DEFAULT_PROVIDER) =>
-  invoke<void>("set_api_key", { provider, key });
+export const authStatus = (provider: ProviderId = DEFAULT_PROVIDER) =>
+  invoke<AuthStatus>("llm_auth_status", { provider }).catch(rethrow);
 
-export const deleteApiKey = (provider: ProviderId = DEFAULT_PROVIDER) =>
-  invoke<void>("delete_api_key", { provider });
+export const listModels = (provider: ProviderId = DEFAULT_PROVIDER) =>
+  invoke<ModelInfo[]>("llm_list_models", { provider }).catch(rethrow);
 
-export const defaultModel = (provider: ProviderId = DEFAULT_PROVIDER) =>
-  invoke<string>("llm_default_model", { provider });
+// ---- Sign in with ChatGPT ---------------------------------------------------
+
+export interface AccountInfo {
+  signedIn: boolean;
+  email: string | null;
+  planEnabled: boolean;
+  /** Show the one-time "You're using your ChatGPT plan" notice. */
+  showWelcome: boolean;
+  hasRegistration: boolean;
+}
+
+/** "continue": saved account (or register); "newAccount": another account; "enablePlan": re-consent. */
+export type SignInMode = "continue" | "newAccount" | "enablePlan";
+
+/** Opens the browser; resolves once signed in. */
+export const signIn = (mode: SignInMode = "continue") =>
+  invoke<AccountInfo>("chatgpt_sign_in", { mode }).catch(rethrow);
+
+export const cancelSignIn = () => invoke<void>("chatgpt_cancel_sign_in");
+
+/** Resolves to whether OpenAI confirmed revoking the session. */
+export const signOut = () => invoke<boolean>("chatgpt_sign_out").catch(rethrow);
+
+export const account = () => invoke<AccountInfo>("chatgpt_account").catch(rethrow);
+
+export const ackWelcome = () => invoke<void>("chatgpt_ack_welcome").catch(rethrow);

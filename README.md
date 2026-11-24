@@ -5,6 +5,7 @@ in side-by-side panes, and ask an AI about any passage. Everything is stored as
 plain files inside the folder (`.reader/` holds annotations, chats and layout).
 
 Built with Tauri 2 (Rust backend), React + TypeScript, dockview and pdf.js.
+Answers come from OpenAI models via Sign in with ChatGPT.
 
 ## Develop
 
@@ -17,13 +18,57 @@ npm test              # frontend unit tests
 cd src-tauri && cargo test   # backend tests
 ```
 
-The Anthropic API key is stored in the OS keychain (entered in the chat pane).
-During development `ANTHROPIC_API_KEY` is used as a fallback.
+## Signing in (ChatGPT)
+
+Plato uses OpenAI's **Sign in with ChatGPT** flow for open-source apps
+(https://developers.openai.com/siwc/token-sharing-open-source): click
+**Continue with ChatGPT**, approve in the browser, and questions are answered
+through the Responses API using your ChatGPT plan. No API key is needed.
+
+- The first sign-in registers Plato with your account; later sign-ins reuse
+  that registration. Manage or disconnect it at ChatGPT Settings → Usage.
+- Tokens are stored in `chatgpt-accounts.json` in the app config folder
+  (owner-only permissions), refreshed automatically, and revoked on sign-out.
+- ChatGPT plan usage through third-party apps is a preview; Plus plans share a
+  five-hour usage limit across all such apps.
+
+## Managing files
+
+- **+ Add files** (bottom of the sidebar) copies files from your computer into
+  the selected folder; click a folder to select it, opening a file selects its
+  folder. Dropping files from Finder onto a folder in the sidebar does the same.
+- **Drag a file onto a folder** in the sidebar to move it (onto empty space:
+  the workspace root). Its highlights and chats move with it, and the chats'
+  `source` and `[[links]]` are updated.
+- **Right-click a file** for *Show in Finder* and *Move to Trash…*. Trashed
+  files can be restored from the Trash; their highlights and chats are kept.
+- Nothing is ever overwritten: a taken name gets a ` (2)` suffix.
+
+## Chats
+
+Each document can have several chats; each is a Markdown file:
+
+```
+.reader/chats/<document path>/<YYYY-MM-DD>-<title-slug>.md
+```
+
+with YAML front matter (`type`, `id`, `title`, `source`, `created`, `updated`,
+`models`), a `[[document]]` wikilink, and the turns in order. Every turn starts
+with a `<!-- plato:turn {...} -->` comment carrying its role, time and model, so
+the files read naturally and can be parsed back (e.g. to build a wiki).
+A chat is saved after each completed answer; **New chat** starts fresh context.
+
+**Ask AI** on a PDF selection attaches the passage to the document's open
+chat. The model gets the quote, the full text of its page, and the question;
+the saved turn keeps the quote as a blockquote cited with
+`[[paper.pdf#page=N|…]]` and the highlight id in its marker. Clicking the
+quote jumps to the highlight; clicking a highlight offers **Show in chat**.
 
 ## Layout
 
 - `src-tauri/src/workspace.rs` – all file access, scoped to the open folder
-- `src-tauri/src/llm/` – `Provider` trait and the Anthropic adapter (streaming)
-- `src-tauri/src/secrets.rs` – API keys in the OS keychain
+- `src-tauri/src/llm/` – `Provider` trait; `openai/` holds the Responses API
+  provider and `openai/auth.rs` the Sign in with ChatGPT flow
 - `src/pdf/` – pdf.js viewer, highlight anchoring (quote + prefix/suffix + rects)
-- `src/panes/` – dockview pane types (PDF, text, chat)
+- `src/lib/chats.ts` – chat file format, listing, saving
+- `src/panes/` – dockview pane types (PDF, text, chat, settings)

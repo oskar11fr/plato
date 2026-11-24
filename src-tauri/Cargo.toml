@@ -23,13 +23,18 @@ tauri-plugin-opener = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tauri-plugin-dialog = "2"
-reqwest = { version = "0.13", default-features = false, features = ["json", "stream", "rustls"] }
+reqwest = { version = "0.13", default-features = false, features = ["json", "stream", "rustls", "form", "query"] }
 tokio = { version = "1", features = ["macros", "time", "sync", "net", "io-util", "rt"] }
 tokio-util = "0.7"
 futures-util = "0.3"
 async-trait = "0.1"
 thiserror = "2.0.21"
-keyring = "4"
+jsonwebtoken = { version = "12", default-features = false, features = ["rust_crypto"] }
+sha2 = "0.11"
+base64 = "0.23"
+getrandom = "0.3"
+uuid = { version = "1", features = ["v4"] }
+trash = "5"
 
 
 # Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration
