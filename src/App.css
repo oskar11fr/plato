@@ -430,6 +430,194 @@ select {
   font-size: 12px;
   color: var(--muted);
 }
+.lint-wiki {
+  width: 100%;
+  padding: 6px 8px;
+  text-align: left;
+  color: var(--muted);
+}
+.lint-wiki:hover:not(:disabled) {
+  color: var(--ink);
+}
+
+/* The wiki lint pane */
+.lint-pane {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: var(--paper);
+}
+.lint-body {
+  flex: 1;
+  overflow: auto;
+  padding: 28px 36px 24px;
+  max-width: 760px;
+}
+.lint-head h2 {
+  font-family: var(--font-read);
+  font-size: 24px;
+  font-weight: 600;
+  margin: 0 0 4px;
+}
+.lint-head p,
+.lint-section > p {
+  margin: 0 0 10px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.lint-section {
+  margin-top: 26px;
+}
+.lint-section h3 {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+  margin: 0 0 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--rule);
+}
+.lint-section h3 .muted {
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 400;
+}
+.lint-apply {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 36px;
+  font-size: 12px;
+  border-top: 1px solid var(--rule);
+  background: var(--paper-2);
+}
+.lint-summary {
+  margin: 10px 0;
+  font-size: 13px;
+}
+.lint-summary p {
+  margin: 0 0 4px;
+}
+.lint-summary ul {
+  list-style: none;
+  margin: 4px 0 0;
+  padding: 0;
+}
+.lint-summary summary {
+  cursor: pointer;
+  color: var(--muted);
+}
+.lint-controls,
+.lint-progress {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  font-size: 12px;
+  margin: 10px 0;
+}
+.lint-page {
+  margin: 14px 0;
+  padding-top: 10px;
+  border-top: 1px solid var(--rule);
+}
+.lint-page-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  font-size: 13px;
+  min-width: 0;
+}
+.lint-page-head > .link-button:first-child {
+  font-weight: 600;
+  color: var(--ink);
+}
+.lint-page-head .muted {
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+.lint-page ul,
+.lint-check ul {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 0;
+}
+.lint-page li {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 4px 0;
+  font-size: 13px;
+}
+.lint-page li label.checkbox {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+.lint-context {
+  font-family: var(--font-read);
+  font-size: 14px;
+  line-height: 1.45;
+  color: var(--ink-2);
+}
+.lint-context mark {
+  background: var(--hl);
+  color: var(--ink);
+  border-radius: 2px;
+  padding: 0 1px;
+}
+.lint-target {
+  flex-shrink: 0;
+  max-width: 40%;
+  font-size: 12px;
+  color: var(--muted);
+  text-align: right;
+}
+.lint-check {
+  border-bottom: 1px solid var(--rule);
+  padding: 6px 0;
+}
+.lint-check summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  font-size: 13px;
+  padding: 2px 0;
+}
+.lint-count {
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+}
+.lint-check.has-problems .lint-count {
+  color: var(--danger);
+  font-weight: 600;
+}
+.lint-check p {
+  margin: 4px 0;
+}
+.lint-check li {
+  font-size: 13px;
+  padding: 2px 0;
+}
+.lint-check code,
+.lint-page code {
+  font-family: var(--font-mono);
+  font-size: 0.88em;
+  background: var(--hover);
+  padding: 1px 4px;
+  border-radius: 3px;
+}
+.small {
+  font-size: 12px;
+}
 
 /* Right-click menu on files */
 .context-menu {

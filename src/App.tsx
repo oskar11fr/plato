@@ -20,7 +20,8 @@ import {
   type WorkspaceInfo,
 } from "./lib/backend";
 import { filesChanged } from "./lib/bus";
-import { isOpenable, openChat, openFile, openSettings, openSummary, paneComponents, type ChatParams } from "./panes";
+import { setWorkspaceFiles } from "./lib/wikilinks";
+import { isOpenable, openChat, openFile, openLint, openSettings, openSummary, paneComponents, type ChatParams } from "./panes";
 import "./App.css";
 
 const LAST_WORKSPACE_KEY = "plato.lastWorkspace";
@@ -275,6 +276,9 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- helpers read current state
   }, [workspace]);
 
+  // [[Links]] resolve by file name anywhere in the workspace, so they need the file list.
+  useEffect(() => setWorkspaceFiles(treeFiles(tree)), [tree]);
+
   // Panes that write files (e.g. a saved wiki page) show up in the tree.
   useEffect(() => {
     if (!workspace) return;
@@ -345,6 +349,9 @@ export default function App() {
                   Use workspace root
                 </button>
               )}
+              <button className="lint-wiki" onClick={() => api && openLint(api)} title="Check the wiki's links and suggest new ones">
+                Lint wiki
+              </button>
             </footer>
           </>
         ) : (
@@ -375,4 +382,9 @@ export default function App() {
       </main>
     </div>
   );
+}
+
+/** Every file path in the tree. */
+function treeFiles(nodes: TreeNode[]): string[] {
+  return nodes.flatMap((n) => (n.kind === "dir" ? treeFiles(n.children) : [n.path]));
 }

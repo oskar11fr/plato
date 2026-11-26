@@ -95,3 +95,13 @@ export function openSettings(api: DockviewApi) {
   }
   api.addPanel({ id: "settings", component: "settings", title: "Settings" });
 }
+
+/** Open (or focus) the wiki lint pane. */
+export function openLint(api: DockviewApi) {
+  const existing = api.getPanel("lint");
+  if (existing) {
+    existing.api.setActive();
+    return;
+  }
+  api.addPanel({ id: "lint", component: "lint", title: "Lint wiki" });
+}

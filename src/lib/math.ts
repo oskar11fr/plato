@@ -5,6 +5,11 @@
 /** Fenced blocks (``` or ~~~, possibly unclosed while streaming) and inline code. */
 const CODE = /(^|\n)(```|~~~)[^\n]*\n[\s\S]*?(?:\n\2[^\n]*(?=\n|$)|$)|`+[^`\n]*`+/g;
 
+/** Where the code (fenced blocks and inline code) is in `markdown`, as [start, end) ranges. */
+export function codeRanges(markdown: string): [number, number][] {
+  return [...markdown.matchAll(CODE)].map((m) => [m.index, m.index + m[0].length]);
+}
+
 /** Apply `fn` to the parts of `markdown` outside code. */
 export function outsideCode(markdown: string, fn: (text: string) => string): string {
   let out = "";

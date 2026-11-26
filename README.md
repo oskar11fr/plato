@@ -132,6 +132,35 @@ edit them per workspace
 fixed in `src/lib/summary.ts` and `src/lib/book.ts`, so custom instructions
 can't break them.
 
+## Wiki links and linting
+
+`[[Links]]` resolve the way Obsidian resolves them: a workspace path
+(`[[papers/a.pdf#page=3]]`, `[[wiki/sources/attention]]`), else a file name
+found anywhere in the workspace (`[[self-attention]]`, `[[a.pdf]]`),
+preferring `wiki/` and then the shortest path. A bare name with no page yet
+points at `wiki/concepts/<name>.md`, the page it would become. Plato still
+writes full paths in the pages it generates; Obsidian reads those too.
+
+**Lint wiki** at the bottom of the folder pane opens the lint pane:
+
+- **Checks** (no AI): broken links (to files that don't exist), ambiguous
+  names (matching several files), source pages missing from the index (with
+  **Rebuild the index**), orphan pages, pages linked but not written yet, and
+  thin pages.
+- **Suggest links**: the model reads each page with a catalog of the other
+  pages (link, type, title, aliases, TL;DR) and replies with phrases to link
+  and fixes for links that lead nowhere. It never rewrites a page: Plato
+  finds each phrase itself, outside front matter, headings, tables, code,
+  math and existing links, and shows it in context. Tick the links to keep
+  and **Apply** them. Links are written as bare names, or as paths when a
+  name is shared. Each apply adds an entry to `wiki/log.md`.
+
+`.reader/lint.json` remembers which pages were checked against which pages,
+so the next lint sends only new and changed pages, and unchanged pages only
+for links to pages added since. Books' `00-overview.md` pages aren't linked,
+since Plato rewrites them from their drafts. Saving a summary again from its
+draft replaces the page and any links lint added; lint it again afterwards.
+
 ## Appearance
 
 Two themes: **Paper** (light: warm off-white, black accent, Source Serif 4 for
@@ -148,5 +177,6 @@ colours are tokens at the top of `src/App.css`.
 - `src/pdf/` – pdf.js viewer, highlight anchoring (quote + prefix/suffix + rects)
 - `src/lib/chats.ts` – chat file format, listing, saving
 - `src/lib/summary.ts`, `src/lib/book.ts`, `src/lib/wiki.ts` – summary and chapter prompts, drafts, wiki pages and index
+- `src/lib/lint.ts`, `src/lib/wikilinks.ts` – wiki checks, link suggestions, and Obsidian-style link resolution
 - `src/skills/` – built-in skills (instructions for AI tasks)
 - `src/panes/` – dockview pane types (PDF, text, chat, summary, settings)

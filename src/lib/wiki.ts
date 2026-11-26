@@ -9,11 +9,13 @@
 // Drafts that haven't been saved yet live in .reader/drafts/<document>/.
 import { sha256 } from "./annotations";
 import type { BookDraft } from "./book";
+import { emptyLintState, LOG_FILE, NEW_LOG, type LintState } from "./lint";
 import { deleteAppFile, listDir, READER_DIR, readTextFile, readTextFileOpt, writeTextFile } from "./backend";
 import { parseFrontMatter, str, strList } from "./frontmatter";
 import {
   INDEX_FILE,
   SOURCES_DIR,
+  WIKI_DIR,
   summaryFileName,
   wikiIndexText,
   wikiPageSource,
@@ -155,4 +157,41 @@ export async function updateWikiIndex() {
     };
   });
   await writeTextFile(INDEX_FILE, wikiIndexText(entries));
+}
+
+/** Every Markdown page in wiki/, in subfolders too (hidden folders skipped). */
+export async function listWikiPages(dir = WIKI_DIR): Promise<{ path: string; text: string }[]> {
+  const entries = await listDir(dir).catch(() => []);
+  const nested = await Promise.all(
+    entries
+      .filter((e) => !e.name.startsWith("."))
+      .map(async (e) => {
+        const path = `${dir}/${e.name}`;
+        if (e.is_dir) return listWikiPages(path);
+        if (!e.name.endsWith(".md")) return [];
+        const text = await readTextFile(path).catch(() => null);
+        return text === null ? [] : [{ path, text }];
+      }),
+  );
+  return nested.flat();
+}
+
+const LINT_STATE = `${READER_DIR}/lint.json`;
+
+export async function loadLintState(): Promise<LintState> {
+  try {
+    const state = JSON.parse((await readTextFileOpt(LINT_STATE)) ?? "") as LintState;
+    if (state.version === 1 && Array.isArray(state.runs) && state.pages) return state;
+  } catch {
+    // none yet, or unreadable: start over
+  }
+  return emptyLintState();
+}
+
+export const saveLintState = (state: LintState) => writeTextFile(LINT_STATE, `${JSON.stringify(state)}\n`);
+
+/** Add an entry to the end of wiki/log.md, creating it if needed. */
+export async function appendLog(entry: string) {
+  const log = (await readTextFileOpt(LOG_FILE)) ?? NEW_LOG;
+  await writeTextFile(LOG_FILE, `${log.replace(/\n*$/, "\n\n")}${entry}`);
 }
