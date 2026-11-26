@@ -3,6 +3,10 @@ import type { OutlineNode } from "../pdf/text";
 import {
   assignPaths,
   chapterNumber,
+  chaptersChangedSince,
+  CONTENTS_MARKER,
+  overviewPageToDraft,
+  overviewRequestMessage,
   metaFromInfo,
   nextUnwritten,
   outlineLevels,
@@ -217,5 +221,81 @@ describe("book drafts", () => {
       year: null,
     });
     expect(metaFromInfo({ title: "Microsoft Word - draft.docx", author: "" }, "x/my_book.pdf").title).toBe("my book");
+  });
+});
+
+const overviewOutput = [
+  "---",
+  'title: "A Story: Told Well"',
+  'tldr: "A story about stories."',
+  "---",
+  "",
+  "# A Story: Told Well",
+  "",
+  "**TL;DR** It begins, drags in [[wiki/sources/a-story-told-well/02-2-middles|chapter 2]], and ends.",
+  "",
+  "## The argument",
+  "",
+  "Stories need middles ([[books/story.pdf#page=41|p. 41]]).",
+].join("\n");
+
+/** A book with chapter 2 saved and chapter 1 drafted. */
+function writtenBook(): BookDraft {
+  const draft = assignPaths(bookDraft(), []);
+  draft.sections[3] = {
+    ...draft.sections[3],
+    versions: [{ text: '---\ntitle: "1 Beginnings"\ntldr: "It starts."\n---\n# 1 Beginnings\n\nThe start.', by: "ai", at: "t" }],
+  };
+  draft.sections[4] = {
+    ...draft.sections[4],
+    versions: [{ text: chapterOutput, by: "ai", at: "t" }],
+    saved: { path: draft.sections[4].path!, version: 0, digest: "d2" },
+  };
+  return draft;
+}
+
+describe("book overview", () => {
+  it("asks for the overview from the chapter pages written so far", () => {
+    const message = overviewRequestMessage(writtenBook());
+    expect(message).toContain("1. 1 Beginnings, pp. 6–39: [[wiki/sources/a-story-told-well/01-1-beginnings]]");
+    expect(message).toContain("3. 3 Ends, pp. 81–117 (not summarized yet)");
+    expect(message).toContain('<chapter number="2" title="2 Middles" pages="40-79" path="wiki/sources/a-story-told-well/02-2-middles">');
+    expect(message).toContain("TL;DR: The middle drags, on purpose.");
+    expect(message).toContain("**TL;DR** It drags");
+    expect(message).not.toContain("# 2 Middles"); // chapter titles are in the tag, not repeated
+    expect(message).not.toContain('<chapter number="3"');
+    expect(message.trim().endsWith("1 of its 3 chapters aren't summarized yet; cover the others and say briefly what's missing.")).toBe(true);
+  });
+
+  it("puts the saved overview above the contents and reads it back", () => {
+    const draft = writtenBook();
+    draft.overview = {
+      versions: [{ text: overviewOutput, by: "ai", at: "t", model: "gpt-x" }],
+      current: 0,
+      saved: { path: "x", version: 0, digest: "o" },
+    };
+    const text = overviewPageText(draft, { created: "c", updated: "u" });
+    expect(parseFrontMatter(text).front).toMatchObject({ kind: "book", tldr: "A story about stories.", model: "gpt-x" });
+    const body = parseFrontMatter(text).body;
+    expect(body.indexOf("## The argument")).toBeGreaterThan(body.indexOf("[[books/story.pdf|story.pdf]]"));
+    expect(body.indexOf(CONTENTS_MARKER)).toBeGreaterThan(body.indexOf("## The argument"));
+    expect(body.indexOf("## Contents")).toBeGreaterThan(body.indexOf(CONTENTS_MARKER));
+    expect(body.match(/^# /gm)).toHaveLength(1);
+    const back = overviewPageToDraft(text);
+    expect(back && parseSection(back)).toEqual({ ...parseSection(overviewOutput), body: parseSection(overviewOutput).body.trim() + "\n" });
+  });
+
+  it("finds no overview text in a page with only the contents", () => {
+    expect(overviewPageToDraft(overviewPageText(writtenBook(), { created: "c", updated: "u" }))).toBeNull();
+  });
+
+  it("counts chapters saved since the overview was written", () => {
+    const draft = writtenBook();
+    expect(chaptersChangedSince(draft)).toBe(0);
+    draft.overview = { versions: [{ text: overviewOutput, by: "ai", at: "t" }], current: 0, from: ["d2"] };
+    expect(chaptersChangedSince(draft)).toBe(0);
+    draft.sections[3] = { ...draft.sections[3], saved: { path: "p", version: 0, digest: "d1" } };
+    draft.sections[4] = { ...draft.sections[4], saved: { path: "p", version: 0, digest: "d2b" } };
+    expect(chaptersChangedSince(draft)).toBe(2);
   });
 });

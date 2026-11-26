@@ -7,13 +7,18 @@ import { loadAnnotations } from "../lib/annotations";
 import { readTextFileOpt } from "../lib/backend";
 import {
   chapterNumber,
+  chaptersChangedSince,
   includedSections,
   nextUnwritten,
   outlineLevels,
+  OVERVIEW,
   overviewPageText,
   overviewPath,
+  overviewRequestMessage,
+  overviewSystemPrompt,
   pageRange,
   parseSection,
+  savedChapterDigests,
   sectionChars,
   sectionPageText,
   sectionRequestMessage,
@@ -21,13 +26,14 @@ import {
   sectionSystemPrompt,
   withEnds,
   type BookDraft,
+  type BookOverview,
   type BookSection,
 } from "../lib/book";
 import { filesChanged } from "../lib/bus";
 import { parseFrontMatter, str } from "../lib/frontmatter";
 import type { ChatMessage } from "../lib/llm";
 import { loadSkill } from "../lib/skills";
-import { INDEX_FILE, MAX_SOURCE_CHARS, MIN_SOURCE_CHARS, revisionMessages, versionChain } from "../lib/summary";
+import { byline as bylineOf, INDEX_FILE, MAX_SOURCE_CHARS, MIN_SOURCE_CHARS, revisionMessages, versionChain } from "../lib/summary";
 import { digest, writeWikiPage } from "../lib/wiki";
 import type { OutlineNode } from "../pdf/text";
 
@@ -204,11 +210,16 @@ export function BookView(props: BookViewProps) {
   const running = !!writer.running;
 
   const chapters = includedSections(draft);
+  const showOverview = draft.selected === OVERVIEW;
   const index = draft.sections[draft.selected]?.include ? draft.selected : (chapters[0]?.index ?? 0);
   const section = draft.sections[index];
   const number = chapterNumber(draft, index);
-  const position = chapters.findIndex((c) => c.index === index);
+  // The overview comes first, then the chapters in order.
+  const nav = [OVERVIEW, ...chapters.map((c) => c.index)];
+  const position = nav.indexOf(showOverview ? OVERVIEW : index);
   const savedCount = chapters.filter((c) => c.section.saved).length;
+  const writtenCount = chapters.filter((c) => c.section.versions.length).length;
+  const overview: BookOverview = draft.overview ?? { versions: [], current: 0 };
 
   function change(next: BookDraft) {
     latest.current = next;
@@ -217,6 +228,11 @@ export function BookView(props: BookViewProps) {
 
   function setSection(i: number, fn: (s: BookSection) => BookSection, base = latest.current) {
     change({ ...base, sections: base.sections.map((s, j) => (j === i ? fn(s) : s)) });
+  }
+
+  function setOverview(fn: (o: BookOverview) => BookOverview) {
+    const base = latest.current;
+    change({ ...base, overview: fn(base.overview ?? { versions: [], current: 0 }) });
   }
 
   function select(i: number) {
@@ -253,6 +269,62 @@ export function BookView(props: BookViewProps) {
     const v = feedback === undefined ? version : { ...version, basedOn: s.current, feedback };
     setSection(i, (cur) => ({ ...cur, versions: [...cur.versions, v], current: cur.versions.length }));
     return true;
+  }
+
+  /** Write the overview from the chapter pages (no `feedback`), or revise its shown version. */
+  async function writeOverview(feedback?: string): Promise<boolean> {
+    if (writer.running) return false;
+    setStatus(null);
+    const base = latest.current;
+    const o = base.overview ?? { versions: [], current: 0 };
+    let system: string;
+    let messages: ChatMessage[];
+    try {
+      if (!includedSections(base).some((c) => c.section.versions.length)) throw new Error("Write some chapters first: the overview is written from their pages.");
+      const request = overviewRequestMessage(base);
+      system = overviewSystemPrompt(docPath, await loadSkill("summarize-book"));
+      messages = feedback === undefined || o.versions.length === 0 ? [{ role: "user", content: request }] : revisionMessages(request, o.versions, o.current, feedback);
+    } catch (e) {
+      writer.setError({ kind: "source", message: e instanceof Error ? e.message : String(e) });
+      return false;
+    }
+    const version = await writer.write({ model: props.model ?? undefined, system, messages });
+    if (!version) return false;
+    const v = feedback === undefined || o.versions.length === 0 ? version : { ...version, basedOn: o.current, feedback };
+    setOverview((cur) => ({ ...cur, versions: [...cur.versions, v], current: cur.versions.length, from: savedChapterDigests(base) }));
+    return true;
+  }
+
+  async function saveOverview() {
+    const d = latest.current;
+    const o = d.overview;
+    const version = o?.versions[o.current];
+    if (!o || !version || !d.folder) return;
+    setSaving(true);
+    setStatus(null);
+    try {
+      if (!parseSection(version.text).body.trim()) throw new Error("This version has no text to save.");
+      const path = overviewPath(d.folder);
+      const existing = await readTextFileOpt(path);
+      const now = new Date().toISOString();
+      const created = existing ? str(parseFrontMatter(existing).front.created) || now : now;
+      const saved = { path, version: o.current, digest: "" };
+      const text = overviewPageText({ ...d, overview: { ...o, saved } }, { created, updated: now });
+      saved.digest = await digest(text);
+      await writeWikiPage(path, text);
+      setOverview((cur) => ({ ...cur, saved }));
+      filesChanged.emit([path, INDEX_FILE]);
+      setStatus(`Saved to ${path}`);
+    } catch (e) {
+      setStatus(`Not saved: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function openOverview(write: boolean) {
+    select(OVERVIEW);
+    if (write) void writeOverview();
   }
 
   // "Start writing" opens the book on its first chapter and writes it.
@@ -314,6 +386,13 @@ export function BookView(props: BookViewProps) {
     },
     [section?.title],
   );
+  const parseOverview = useCallback(
+    (text: string) => {
+      const p = parseSection(text);
+      return { title: p.title || draft.meta.title, body: p.body };
+    },
+    [draft.meta.title],
+  );
 
   if (!section || !draft.folder) return <div className="pane pane-message muted">This book has no chapters to summarize.</div>;
 
@@ -335,13 +414,91 @@ export function BookView(props: BookViewProps) {
     </div>
   );
 
+  const changedSince = chaptersChangedSince(draft);
+  const overviewSaved = !!overview.saved && overview.saved.version === overview.current;
+  const bookByline = (
+    <div className="reading-byline">
+      {bylineOf(draft.meta) && <span className="byline-authors">{bylineOf(draft.meta)} · </span>}
+      <button className="link-button source-link" onClick={() => props.onOpenFile(docPath)} title={docPath}>
+        {docPath.split("/").pop()}
+      </button>
+    </div>
+  );
+  const overviewPanel =
+    overview.versions.length === 0 ? (
+      writer.streamed !== null ? (
+        <StreamingView text={writer.streamed} onStop={() => writer.running?.cancel()} onWikiLink={props.onWikiLink} waiting="Reading the chapter pages…" />
+      ) : (
+        <div className="summary-start">
+          <div className="kicker">Book overview</div>
+          <h2>{draft.meta.title}</h2>
+          <p className="muted">
+            The AI reads the chapter pages (the saved version of each, else its latest draft) and writes the book's overview: what it
+            argues, how the chapters build on each other, and the key concepts. It's saved to <code>{overviewPath(draft.folder)}</code>{" "}
+            above the contents.
+          </p>
+          {writtenCount < chapters.length && (
+            <p className="muted">
+              {writtenCount === 0
+                ? "No chapters are written yet."
+                : `Only ${writtenCount} of ${chapters.length} chapters are written so far; the overview will cover those. It's best written once all chapters are saved.`}
+            </p>
+          )}
+          {props.signIn || (
+            <div className="row">
+              <button className="primary" onClick={() => void writeOverview()} disabled={running || writtenCount === 0}>
+                Write the overview
+              </button>
+            </div>
+          )}
+          {writer.error && <ErrorLine error={writer.error} />}
+          {writer.limitReached && <UsageLimit />}
+        </div>
+      )
+    ) : (
+      <DraftView
+        key="overview"
+        item={overview}
+        parse={parseOverview}
+        kicker={`Book overview · ${writtenCount} of ${chapters.length} chapters`}
+        byline={bookByline}
+        writer={writer}
+        onSelect={(v) => setOverview((o) => ({ ...o, current: v }))}
+        onKeepEdit={(text) => setOverview((o) => ({ ...o, versions: [...o.versions, editVersion(o, text)], current: o.versions.length }))}
+        onRevise={(feedback) => writeOverview(feedback)}
+        onWikiLink={props.onWikiLink}
+        signIn={props.signIn}
+        actions={
+          <div className="summary-actions">
+            {status && <SaveStatus status={status} path={overview.saved?.path} onOpen={props.onOpenFile} />}
+            {!status && changedSince > 0 && (
+              <span className="muted">
+                {changedSince === 1 ? "1 chapter was" : `${changedSince} chapters were`} saved since this was written.{" "}
+                <button className="link-button" onClick={() => void writeOverview(UPDATE_FOR_CHAPTERS)} disabled={running || !!props.signIn}>
+                  Update for new chapters
+                </button>
+              </span>
+            )}
+            <span className="spacer" />
+            <button className="primary" onClick={() => void saveOverview()} disabled={saving || running || overviewSaved}>
+              {overviewSaved ? "Saved to wiki" : overview.saved ? "Update wiki page" : "Accept and save"}
+            </button>
+          </div>
+        }
+      />
+    );
+
   return (
     <>
       <div className="book-bar">
-        <button className="icon-button" aria-label="Previous chapter" disabled={position <= 0 || running} onClick={() => select(chapters[position - 1].index)}>
+        <button className="icon-button" aria-label="Previous chapter" disabled={position <= 0 || running} onClick={() => select(nav[position - 1])}>
           ◀
         </button>
-        <select value={index} disabled={running} aria-label="Chapter" onChange={(e) => select(Number(e.target.value))}>
+        <select value={showOverview ? OVERVIEW : index} disabled={running} aria-label="Chapter" onChange={(e) => select(Number(e.target.value))}>
+          <option value={OVERVIEW}>
+            {overview.saved ? "✓ " : overview.versions.length ? "• " : "\u2003"}
+            Overview
+          </option>
           {chapters.map((c, n) => (
             <option key={c.index} value={c.index}>
               {c.section.saved ? "✓ " : c.section.versions.length ? "• " : " "}
@@ -352,8 +509,8 @@ export function BookView(props: BookViewProps) {
         <button
           className="icon-button"
           aria-label="Next chapter"
-          disabled={position >= chapters.length - 1 || running}
-          onClick={() => select(chapters[position + 1].index)}
+          disabled={position >= nav.length - 1 || running}
+          onClick={() => select(nav[position + 1])}
         >
           ▶
         </button>
@@ -361,15 +518,21 @@ export function BookView(props: BookViewProps) {
           {savedCount} of {chapters.length} saved
         </span>
         <span className="spacer" />
-        <button className="link-button" onClick={() => props.onOpenFile(overviewPath(draft.folder!))} disabled={savedCount === 0}>
-          Contents page
+        <button
+          className="link-button"
+          onClick={() => props.onOpenFile(overviewPath(draft.folder!))}
+          disabled={savedCount === 0 && !overview.saved}
+        >
+          Overview page
         </button>
         <button onClick={props.onDiscard} disabled={running}>
           Discard
         </button>
       </div>
 
-      {section.versions.length === 0 ? (
+      {showOverview ? (
+        overviewPanel
+      ) : section.versions.length === 0 ? (
         writer.streamed !== null ? (
           <StreamingView
             text={writer.streamed}
@@ -436,7 +599,11 @@ export function BookView(props: BookViewProps) {
                   Write next: {chapterNumber(draft, next)}. {truncate(nextSection.title, 32)}
                 </button>
               )}
-              {isSaved && !nextSection && savedCount === chapters.length && <span className="ok">All chapters saved</span>}
+              {isSaved && !nextSection && savedCount === chapters.length && (
+                <button className="primary" onClick={() => openOverview(overview.versions.length === 0)} disabled={running || !!props.signIn}>
+                  {overview.versions.length === 0 ? "Write the overview" : "Go to the overview"}
+                </button>
+              )}
             </div>
           }
         />
@@ -444,5 +611,9 @@ export function BookView(props: BookViewProps) {
     </>
   );
 }
+
+/** The request behind "Update for new chapters". */
+const UPDATE_FOR_CHAPTERS =
+  "Chapters were added or revised since you wrote this overview; my first message now has their current pages. Update the overview to cover them, and keep everything else as it is.";
 
 const truncate = (s: string, n: number) => (s.length > n ? `${s.slice(0, n - 1)}…` : s);

@@ -14,6 +14,9 @@ import {
   metaFromInfo,
   nextUnwritten,
   overviewMeta,
+  overviewPageToDraft,
+  overviewPath,
+  savedChapterDigests,
   sectionPageToDraft,
   sectionsFromOutline,
   suggestLevel,
@@ -238,6 +241,17 @@ export function SummaryPane({ params, containerApi }: IDockviewPanelProps<Summar
           };
         }),
       );
+      const overviewFile = d.folder ? overviewPath(d.folder) : null;
+      const overviewText = overviewFile ? await readTextFileOpt(overviewFile).catch(() => null) : null;
+      const overview = overviewText ? overviewPageToDraft(overviewText) : null;
+      if (overviewFile && overviewText && overview) {
+        d.overview = {
+          versions: [{ text: overview, by: "wiki", at: nowIso() }],
+          current: 0,
+          saved: { path: overviewFile, version: 0, digest: await digest(overviewText) },
+          from: savedChapterDigests(d),
+        };
+      }
       d.selected = nextUnwritten(d) ?? includedSections(d)[0].index;
       await saveBookDraft(d);
       setWriteOnOpen(true);

@@ -102,9 +102,18 @@ Review it like any summary (versions, revisions, hand edits), then
 **Accept and save** writes it to the wiki and offers **Write next**:
 
 ```
-wiki/sources/<book-slug>/00-overview.md     book details and contents (rewritten by the app)
+wiki/sources/<book-slug>/00-overview.md     the book's overview, then its contents (kept up to date by the app)
 wiki/sources/<book-slug>/01-<chapter>.md    one page per chapter
 ```
+
+Once chapters are written, **Overview** (first in the chapter list, and
+offered after the last chapter is saved) has the model write the book's
+overview from the chapter pages, not the book's text: its argument, how the
+chapters build on each other, and the key concepts. It's reviewed and saved
+like a chapter, and goes above the contents in `00-overview.md`. If chapters
+are saved after it was written, the pane says so and offers **Update for new
+chapters**. Edit the overview in the pane: the app rewrites the file whenever
+a chapter is saved.
 
 A chapter page has `type: "source-section"`, `title`, `tldr`, `book`,
 `chapter`, `pages: [first, last]` and `source: "[[book.pdf#page=N]]"`, and a
@@ -115,8 +124,10 @@ picks them up from the wiki.
 
 What a summary should contain is a *skill*: `src/skills/summarize-source/SKILL.md`
 (Agent Skills layout: `name` and `description` front matter, then the
-instructions); chapters use `src/skills/summarize-section/SKILL.md`. Settings →
-**Summary instructions** and **Chapter instructions** edit them per workspace
+instructions); chapters use `src/skills/summarize-section/SKILL.md` and book
+overviews `src/skills/summarize-book/SKILL.md`. Settings → **Summary
+instructions**, **Chapter instructions** and **Book overview instructions**
+edit them per workspace
 (saved to `.reader/skills/<name>/SKILL.md`). The page formats the app parses are
 fixed in `src/lib/summary.ts` and `src/lib/book.ts`, so custom instructions
 can't break them.

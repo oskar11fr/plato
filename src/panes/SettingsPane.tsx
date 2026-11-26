@@ -127,6 +127,7 @@ export function SettingsPane() {
 
       <SkillEditor name="summarize-source" />
       <SkillEditor name="summarize-section" />
+      <SkillEditor name="summarize-book" />
     </div>
   );
 }
@@ -172,6 +173,10 @@ const SKILL_TEXT: Record<SkillName, { heading: string; about: string }> = {
   "summarize-section": {
     heading: "Chapter instructions",
     about: "What the AI is told when it summarizes a book chapter by chapter: each chapter page's sections, length and style.",
+  },
+  "summarize-book": {
+    heading: "Book overview instructions",
+    about: "What the AI is told when it writes a book's overview page from its chapter pages.",
   },
 };
 

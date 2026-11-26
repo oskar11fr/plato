@@ -1,6 +1,7 @@
 // Books and other long documents, summarized one chapter at a time.
 //
-//   wiki/sources/<book>/00-overview.md    the book's details and contents (the app writes it)
+//   wiki/sources/<book>/00-overview.md    the book's overview (written by the model from the
+//                                         chapter pages) above its contents (kept by the app)
 //   wiki/sources/<book>/01-<chapter>.md   one page per chapter, in reading order
 //
 // The chapters come from the PDF's bookmarks; the reader checks the list
@@ -9,6 +10,9 @@
 // TL;DRs of the chapters before it, so it can refer back to them; the reader
 // reviews it (the same versions, revisions and hand edits as a whole-document
 // summary) and saves it, then moves on to the next.
+//
+// Once chapters are written, the model writes the book's overview from the
+// chapter pages (not the book's text), reviewed and saved the same way.
 //
 // The draft lives in .reader/drafts/<document>/book.json.
 import type { OutlineNode } from "../pdf/text";
@@ -24,6 +28,7 @@ import {
   type MarkedPassage,
   type PageMeta,
   type SummaryVersion,
+  versionChain,
 } from "./summary";
 
 /** Above this much text, summarizing chapter by chapter is suggested. */
@@ -61,6 +66,18 @@ export interface BookSection {
   saved?: SavedPage;
 }
 
+/** The book's overview page, written from the chapter pages. */
+export interface BookOverview {
+  versions: SummaryVersion[];
+  current: number;
+  saved?: SavedPage;
+  /** The saved chapters (their digests) the newest written version covers. */
+  from?: string[];
+}
+
+/** `BookDraft.selected` when the overview is shown. */
+export const OVERVIEW = -1;
+
 export interface BookDraft {
   version: 1;
   kind: "book";
@@ -73,8 +90,9 @@ export interface BookDraft {
   /** The bookmark level the sections were taken from. */
   level: number;
   sections: BookSection[];
-  /** Index of the section shown. */
+  /** Index of the section shown, or OVERVIEW. */
   selected: number;
+  overview?: BookOverview;
   /** The book's wiki folder. Set when writing starts; the sections are fixed from then on. */
   folder?: string;
 }
@@ -285,6 +303,66 @@ export function sectionRequestMessage(
   return parts.join("\n");
 }
 
+export function overviewSystemPrompt(docPath: string, skill: Skill): string {
+  const cite = (n: number) => `[[${docPath}#page=${n}|p. ${n}]]`;
+  return [
+    "You write pages for a personal research wiki: Markdown files kept next to the reader's documents and linked to each other.",
+    "The reader has summarized a book chapter by chapter, one wiki page per chapter. You write the book's overview page from those chapter pages. The app puts the book's contents (a linked list of the chapters) under your text, so don't repeat it as a list.",
+    "",
+    "Output format (required, the app reads it):",
+    "- Reply with the page only. No preamble or closing remarks, and don't wrap the page in a code block.",
+    "- Start with front matter in exactly this shape, with values written as JSON:",
+    "  ---",
+    '  title: "<the book\'s title>"',
+    '  tldr: "<two or three sentences: what the book is about and its main argument>"',
+    "  ---",
+    "- Then the page body in Markdown, starting with a heading `# <title>`.",
+    "- Link chapters by their wiki pages as given, e.g. [[wiki/sources/book/02-chapter|chapter 2]].",
+    `- Cite pages of the book as wiki links, like ${cite(3)} for page 3, but only pages the chapter pages cite; you haven't read the book itself.`,
+    "- Link concepts that deserve a wiki page of their own as [[concept name]], the way the chapter pages do: lowercase unless a proper noun, singular. Link each concept once, where it first matters.",
+    "- Write all mathematics in LaTeX: $...$ inline, and $$...$$ on lines of their own for display equations.",
+    "",
+    "When the reader asks for changes, reply with the complete revised page in the same format. Change what they ask for and keep everything else as it is, word for word. If they edited the page by hand, keep their edits.",
+    "",
+    `Instructions for this page (skill "${skill.name}"):`,
+    "",
+    skill.instructions,
+  ].join("\n");
+}
+
+/** The request for the overview: the book's details and contents, then every chapter page written so far. */
+export function overviewRequestMessage(draft: BookDraft): string {
+  const chapters = includedSections(draft);
+  const by = draft.meta.authors.length ? ` authors="${draft.meta.authors.join(", ")}"` : "";
+  const year = draft.meta.year ? ` year="${draft.meta.year}"` : "";
+  const parts = [`<book title="${draft.meta.title}"${by}${year} path="${draft.source}">`, "<contents>"];
+  chapters.forEach(({ section: s }, n) => {
+    const link = s.path && s.versions.length ? `: [[${wikiTarget(s.path)}]]` : " (not summarized yet)";
+    parts.push(`${n + 1}. ${s.title}, ${pageRange(s)}${link}`);
+  });
+  parts.push("</contents>", "</book>", "");
+
+  const written = chapters.flatMap(({ section: s }, n) => {
+    const v = s.versions[s.saved?.version ?? s.current] ?? s.versions[s.current];
+    return v ? [{ n: n + 1, s, page: parseSection(v.text) }] : [];
+  });
+  parts.push("The chapter pages:", "");
+  for (const { n, s, page } of written) {
+    const path = s.path ? ` path="${wikiTarget(s.path)}"` : "";
+    parts.push(`<chapter number="${n}" title="${s.title}" pages="${s.start}-${s.end}"${path}>`);
+    if (page.tldr) parts.push(`TL;DR: ${page.tldr}`, "");
+    parts.push(splitTitle(page.body.trim()).rest.trim(), "</chapter>", "");
+  }
+  if (draft.focus.trim()) parts.push(`My focus for this book: ${draft.focus.trim()}`, "");
+  const missing = chapters.length - written.length;
+  parts.push(
+    missing > 0
+      ? `Write the overview page for this book. ${missing} of its ${chapters.length} chapters aren't summarized yet; cover the others and say briefly what's missing.`
+      : "Write the overview page for this book.",
+  );
+  return parts.join("\n");
+}
+
 // ---------------------------------------------------------------- pages
 
 export interface SectionPage {
@@ -354,20 +432,37 @@ export function sectionPageToDraft(text: string): string {
   return sectionDraftText({ title: str(front.title), tldr: str(front.tldr), body: kept });
 }
 
+/** Between the overview the model wrote and the contents the app keeps up to date. */
+export const CONTENTS_MARKER =
+  "<!-- Plato keeps the contents below up to date. Change the overview above in Plato's summary pane: edits made here are replaced. -->";
+
+/** The version of the overview that's in the wiki, if any. */
+function savedOverview(draft: BookDraft): { page: SectionPage; model?: string } | null {
+  const o = draft.overview;
+  const v = o?.saved ? o.versions[o.saved.version] : undefined;
+  if (!o?.saved || !v) return null;
+  const model = [...versionChain(o.versions, o.saved.version)].reverse().find((x) => x.model)?.model;
+  return { page: parseSection(v.text), model };
+}
+
 /**
- * The book's overview page: its details and contents, with a link to every
- * saved chapter. The app rewrites it whenever a chapter is saved.
+ * The book's overview page: its details, the overview the model wrote (once
+ * saved), and its contents with a link to every saved chapter. The app
+ * rewrites it whenever a chapter or the overview is saved.
  */
 export function overviewPageText(draft: BookDraft, info: { created: string; updated: string }): string {
+  const overview = savedOverview(draft);
   const front = serializeFrontMatter([
     ["type", "source-summary"],
     ["kind", "book"],
     ["title", draft.meta.title],
     ["authors", draft.meta.authors],
     ["year", draft.meta.year],
+    ["tldr", overview?.page.tldr || undefined],
     ["source", `[[${draft.source}]]`],
     ["created", info.created],
     ["updated", info.updated],
+    ["model", overview?.model],
   ]);
   const by = byline(draft.meta);
   const lines = [
@@ -375,17 +470,43 @@ export function overviewPageText(draft: BookDraft, info: { created: string; upda
     "",
     [by, `[[${draft.source}|${linkLabel(draft.source.split("/").pop() ?? draft.source)}]]`].filter(Boolean).join(" · "),
     "",
-    "<!-- Plato rewrites this page whenever a chapter is saved. -->",
-    "",
-    "## Contents",
-    "",
   ];
+  const text = overview ? splitTitle(overview.page.body.trim()).rest.trim() : "";
+  if (text) lines.push(text, "");
+  lines.push(CONTENTS_MARKER, "", "## Contents", "");
   includedSections(draft).forEach(({ section: s }, n) => {
     const tldr = s.saved ? sectionTldr(s) : "";
     const entry = s.saved && s.path ? `[[${wikiTarget(s.path)}|${linkLabel(s.title)}]]` : `${s.title} *(not summarized yet)*`;
     lines.push(`${n + 1}. ${entry}, ${pageRange(s)}${tldr ? `: ${tldr}` : ""}`);
   });
   return `${front}\n${lines.join("\n")}\n`;
+}
+
+/** The overview the model wrote, from a saved overview page, as a draft version's text (null if it has none). */
+export function overviewPageToDraft(text: string): string | null {
+  const { front, body } = parseFrontMatter(text);
+  const marker = body.indexOf(CONTENTS_MARKER);
+  const contents = body.search(/^## Contents$/m);
+  const end = marker >= 0 ? marker : contents >= 0 ? contents : body.length;
+  const { title, rest } = splitTitle(body.slice(0, end).replace(/^\n+/, ""));
+  const lines = rest.split("\n");
+  const source = str(front.source).replace(/^\[\[|\]\]$/g, "");
+  if (source && lines[0]?.includes(`[[${source}`)) lines.shift(); // the byline
+  const kept = lines.join("\n").trim();
+  if (!kept || kept.startsWith("<!--")) return null;
+  const heading = str(front.title) || title || "";
+  return sectionDraftText({ title: heading, tldr: str(front.tldr), body: `# ${heading}\n\n${kept}` });
+}
+
+/** Digests of the saved chapters, to tell when the overview is out of date. */
+export const savedChapterDigests = (draft: BookDraft) =>
+  includedSections(draft).flatMap((c) => (c.section.saved ? [c.section.saved.digest] : []));
+
+/** How many chapters were saved (or saved again) since the overview's newest written version. */
+export function chaptersChangedSince(draft: BookDraft): number {
+  const from = draft.overview?.from;
+  if (!from || !draft.overview?.versions.length) return 0;
+  return savedChapterDigests(draft).filter((d) => !from.includes(d)).length;
 }
 
 /** Whether a wiki page is a book's overview (as opposed to a one-page summary). */
