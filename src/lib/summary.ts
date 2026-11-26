@@ -53,7 +53,7 @@ export interface MarkedPassage {
   quote: string;
 }
 
-/** Longer documents need splitting into sections first (not done yet). */
+/** The most text sent in one request; longer documents are summarized chapter by chapter. */
 export const MAX_SOURCE_CHARS = 400_000;
 /** Below this, the PDF most likely has no text layer (a scan). */
 export const MIN_SOURCE_CHARS = 200;
@@ -163,17 +163,21 @@ function unwrapFence(text: string): string {
   return m ? m[1] : text;
 }
 
+/** A version's front matter and body; an empty body while the front matter is still streaming. */
+export function splitDraft(text: string): { front: Record<string, unknown>; body: string } {
+  const clean = unwrapFence(text).replace(/^\s+(?=---\n)/, "");
+  if (clean.startsWith("---\n") && !/\n---(\n|$)/.test(clean.slice(4))) return { front: {}, body: "" };
+  const { front, body } = parseFrontMatter(clean);
+  return { front, body: body.replace(/^\n+/, "") };
+}
+
 /** Split a version's text into its metadata and body (works mid-stream). */
 export function parseDraft(text: string): { meta: PageMeta; body: string } {
-  const clean = unwrapFence(text).replace(/^\s+(?=---\n)/, "");
-  if (clean.startsWith("---\n") && !/\n---(\n|$)/.test(clean.slice(4))) {
-    return { meta: { title: "", authors: [], year: null }, body: "" }; // front matter still streaming
-  }
-  const { front, body } = parseFrontMatter(clean);
+  const { front, body } = splitDraft(text);
   const year = typeof front.year === "number" ? front.year : Number.parseInt(str(front.year), 10);
   return {
     meta: { title: str(front.title).trim(), authors: strList(front.authors), year: Number.isFinite(year) ? year : null },
-    body: body.replace(/^\n+/, ""),
+    body,
   };
 }
 
@@ -239,7 +243,7 @@ export function summaryFileName(title: string, existing: string[]): string {
   return name;
 }
 
-function slug(title: string): string {
+export function slug(title: string): string {
   return title
     .normalize("NFKD")
     .replace(/[̀-ͯ]/g, "")
@@ -263,9 +267,11 @@ export interface IndexEntry {
   title: string;
   authors: string[];
   year: number | null;
+  /** A book's chapter pages, in order. */
+  chapters?: { path: string; title: string }[];
 }
 
-/** wiki/index.md: every source page, by title. Rewritten on each save. */
+/** wiki/index.md: every source page, by title (a book with its chapters). Rewritten on each save. */
 export function wikiIndexText(entries: IndexEntry[]): string {
   const sorted = [...entries].sort((a, b) => a.title.localeCompare(b.title));
   const lines = [
@@ -277,10 +283,12 @@ export function wikiIndexText(entries: IndexEntry[]): string {
     "## Sources",
     "",
   ];
+  const link = (path: string, title: string) => `[[${path.replace(/\.md$/, "")}|${title.replace(/[|\]]/g, " ")}]]`;
   if (sorted.length === 0) lines.push("No summaries yet.");
   for (const e of sorted) {
     const by = byline(e);
-    lines.push(`- [[${e.path.replace(/\.md$/, "")}|${e.title.replace(/[|\]]/g, " ")}]]${by ? ` (${by})` : ""}`);
+    lines.push(`- ${link(e.path, e.title)}${by ? ` (${by})` : ""}`);
+    for (const c of e.chapters ?? []) lines.push(`  - ${link(c.path, c.title)}`);
   }
   return `${lines.join("\n")}\n`;
 }

@@ -544,6 +544,27 @@ mod tests {
     }
 
     #[test]
+    fn move_updates_a_books_chapter_pages() {
+        let root = temp_root("move-book");
+        fs::create_dir_all(root.join("books")).unwrap();
+        fs::write(root.join("b.pdf"), b"pdf").unwrap();
+        fs::create_dir_all(root.join(".reader/drafts/b.pdf")).unwrap();
+        fs::write(root.join(".reader/drafts/b.pdf/book.json"), "{}").unwrap();
+        fs::create_dir_all(root.join("wiki/sources/b")).unwrap();
+        let overview = "---\nkind: \"book\"\nsource: \"[[b.pdf]]\"\n---\n\n# B\n\n[[b.pdf|b.pdf]]\n";
+        let chapter = "---\ntype: \"source-section\"\nsource: \"[[b.pdf#page=7]]\"\n---\n\n# One\n\nSee [[b.pdf#page=9|p. 9]].\n";
+        fs::write(root.join("wiki/sources/b/00-overview.md"), overview).unwrap();
+        fs::write(root.join("wiki/sources/b/01-one.md"), chapter).unwrap();
+
+        move_within(&root, &root.join("b.pdf"), &root.join("books")).unwrap();
+        assert!(root.join(".reader/drafts/books/b.pdf/book.json").is_file());
+        let overview = fs::read_to_string(root.join("wiki/sources/b/00-overview.md")).unwrap();
+        assert!(overview.contains("source: \"[[books/b.pdf]]\"") && overview.contains("[[books/b.pdf|b.pdf]]"));
+        let chapter = fs::read_to_string(root.join("wiki/sources/b/01-one.md")).unwrap();
+        assert!(chapter.contains("source: \"[[books/b.pdf#page=7]]\"") && chapter.contains("[[books/b.pdf#page=9|p. 9]]"));
+    }
+
+    #[test]
     fn names_with_leftover_app_data_count_as_taken() {
         let root = temp_root("taken");
         fs::create_dir_all(root.join(".reader/chats/b.pdf")).unwrap(); // a trashed b.pdf's chats

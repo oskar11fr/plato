@@ -5,11 +5,15 @@
 import { deleteAppFile, READER_DIR, readTextFileOpt, writeTextFile } from "./backend";
 import { parseFrontMatter, str } from "./frontmatter";
 
+import summarizeSection from "../skills/summarize-section/SKILL.md?raw";
 import summarizeSource from "../skills/summarize-source/SKILL.md?raw";
 
-const BUILT_IN: Record<string, string> = { "summarize-source": summarizeSource };
+export type SkillName = "summarize-source" | "summarize-section";
 
-export type SkillName = "summarize-source";
+const BUILT_IN: Record<SkillName, string> = {
+  "summarize-source": summarizeSource,
+  "summarize-section": summarizeSection,
+};
 
 export interface Skill {
   name: string;

@@ -1,27 +1,30 @@
 import { ask as confirmDialog } from "@tauri-apps/plugin-dialog";
 import type { IDockviewPanelProps } from "dockview-react";
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ModelPicker, SignInNotice, UsageFooter, useAssistant } from "../components/Assistant";
 import { PlanWelcome } from "../components/ChatGptSignIn";
-import { Markdown } from "../components/Markdown";
+import { DraftView, editVersion, ErrorLine, nowIso, SaveStatus, StreamingView, UsageLimit, useWriter } from "../components/DraftView";
 import { loadAnnotations } from "../lib/annotations";
 import { readTextFileOpt } from "../lib/backend";
+import {
+  assignPaths,
+  BOOK_SUGGEST_CHARS,
+  includedSections,
+  isBookOverview,
+  metaFromInfo,
+  nextUnwritten,
+  overviewMeta,
+  sectionPageToDraft,
+  sectionsFromOutline,
+  suggestLevel,
+  type BookDraft,
+} from "../lib/book";
 import { filesChanged } from "../lib/bus";
 import { parseFrontMatter, str } from "../lib/frontmatter";
-import {
-  ask,
-  openManageUsage,
-  SIGN_IN_ERRORS,
-  toLlmError,
-  USAGE_LIMIT,
-  type AskHandle,
-  type ChatMessage,
-  type LlmError,
-} from "../lib/llm";
+import type { ChatMessage } from "../lib/llm";
 import { loadSkill } from "../lib/skills";
 import {
   byline,
-  changedBlocks,
   INDEX_FILE,
   MAX_SOURCE_CHARS,
   MIN_SOURCE_CHARS,
@@ -29,17 +32,28 @@ import {
   parseDraft,
   revisionMessages,
   sourceLength,
-  splitTitle,
   summaryRequestMessage,
   summarySystemPrompt,
   versionChain,
   wikiPageText,
   wikiPageToDraft,
   type SummaryDraft,
-  type SummaryVersion,
 } from "../lib/summary";
-import { deleteDraft, digest, findSourcePage, loadDraft, newSourcePagePath, saveDraft, writeWikiPage } from "../lib/wiki";
-import { documentText } from "../pdf/text";
+import {
+  deleteBookDraft,
+  deleteDraft,
+  digest,
+  findSourcePage,
+  loadBookDraft,
+  loadDraft,
+  newSourcePagePath,
+  saveBookDraft,
+  saveDraft,
+  sourceNames,
+  writeWikiPage,
+} from "../lib/wiki";
+import { documentContents, type DocumentContents } from "../pdf/text";
+import { BookSetup, BookView, setupProblem } from "./BookSummary";
 import { openFile, openSettings, openWikiLink, type SummaryParams } from "./open";
 
 const newDraft = (source: string): SummaryDraft => ({
@@ -51,12 +65,10 @@ const newDraft = (source: string): SummaryDraft => ({
   current: 0,
 });
 
-const nowIso = () => new Date().toISOString();
-
-/** A draft for the wiki page that already summarizes the document, if any. */
+/** A draft for the wiki page that already summarizes the document in one page, if any. */
 async function draftFromWiki(docPath: string): Promise<SummaryDraft | null> {
   const page = await findSourcePage(docPath).catch(() => null);
-  if (!page) return null;
+  if (!page || isBookOverview(page.text)) return null;
   return {
     ...newDraft(docPath),
     versions: [{ text: wikiPageToDraft(page.text), by: "wiki", at: nowIso() }],
@@ -64,39 +76,66 @@ async function draftFromWiki(docPath: string): Promise<SummaryDraft | null> {
   };
 }
 
+/** A new book draft for the start screen, at the suggested bookmark level. */
+function newBook(docPath: string, contents: DocumentContents, existing: { meta: BookDraft["meta"] } | null): BookDraft {
+  const level = suggestLevel(contents.outline, contents.pages);
+  return {
+    version: 1,
+    kind: "book",
+    source: docPath,
+    meta: existing?.meta ?? metaFromInfo(contents.info, docPath),
+    focus: "",
+    includeHighlights: true,
+    level,
+    sections: sectionsFromOutline(contents.outline, level, contents.pages),
+    selected: 0,
+  };
+}
+
+type Mode = "whole" | "book";
+
 /**
  * One pane per document: the model writes a summary as a wiki page, the
  * reader asks for changes (or edits it by hand) until it's right, then saves
- * it to wiki/sources/. Drafts are kept in .reader/drafts/ until then.
+ * it to wiki/sources/. A long document can instead get one page per chapter,
+ * written and saved one at a time. Drafts are kept in .reader/drafts/.
  */
 export function SummaryPane({ params, containerApi }: IDockviewPanelProps<SummaryParams>) {
   const docPath = params.docPath;
   const { auth, checkAuth, welcome, closeWelcome, models, model, setModel } = useAssistant();
+  const writer = useWriter(checkAuth);
   const [draft, setDraft] = useState<SummaryDraft | null>(null);
+  const [book, setBook] = useState<BookDraft | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [highlightCount, setHighlightCount] = useState(0);
-
-  const [running, setRunning] = useState<AskHandle | null>(null);
-  const [streamed, setStreamed] = useState<string | null>(null);
-  const [error, setError] = useState<LlmError | null>(null);
-  const [limitReached, setLimitReached] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
-
-  const [feedback, setFeedback] = useState("");
-  const [editing, setEditing] = useState<string | null>(null);
-  const [showChanges, setShowChanges] = useState(true);
   const [saving, setSaving] = useState(false);
-  const pages = useRef<string[] | null>(null);
+  const [writeOnOpen, setWriteOnOpen] = useState(false);
 
-  // Load the saved draft, else start from the wiki page if there is one.
+  // The start screen: the document's text and bookmarks, and how to summarize it.
+  const contents = useRef<Promise<DocumentContents> | null>(null);
+  const [start, setStart] = useState<{ contents: DocumentContents; mode: Mode; book: BookDraft; existingBook: boolean } | null>(null);
+  const [startError, setStartError] = useState<string | null>(null);
+
+  const readContents = useCallback(() => {
+    contents.current ??= documentContents(docPath);
+    contents.current.catch(() => (contents.current = null));
+    return contents.current;
+  }, [docPath]);
+  const readPages = useCallback(async () => (await readContents()).pages, [readContents]);
+
+  // Load a saved book draft, else a summary draft, else the wiki page if there is one.
   useEffect(() => {
     let cancelled = false;
-    pages.current = null;
+    contents.current = null;
     setLoaded(false);
+    setStart(null);
     (async () => {
-      const d = (await loadDraft(docPath).catch(() => null)) ?? (await draftFromWiki(docPath));
+      const b = await loadBookDraft(docPath).catch(() => null);
+      const d = b ? null : ((await loadDraft(docPath).catch(() => null)) ?? (await draftFromWiki(docPath)));
       const notes = await loadAnnotations(docPath).catch(() => null);
       if (cancelled) return;
+      setBook(b);
       setDraft(d);
       setHighlightCount(notes?.highlights.filter((h) => !h.detached).length ?? 0);
       setLoaded(true);
@@ -106,7 +145,31 @@ export function SummaryPane({ params, containerApi }: IDockviewPanelProps<Summar
     };
   }, [docPath]);
 
-  useEffect(() => () => running?.cancel(), [running]);
+  const needsStart = loaded && !book && (!draft || draft.versions.length === 0);
+
+  // On the start screen, read the document to suggest one page or one per chapter.
+  useEffect(() => {
+    if (!needsStart || start) return;
+    let cancelled = false;
+    setStartError(null);
+    (async () => {
+      try {
+        const c = await readContents();
+        const page = await findSourcePage(docPath).catch(() => null);
+        const existing = page && isBookOverview(page.text) ? { meta: overviewMeta(page.text) } : null;
+        const b = newBook(docPath, c, existing);
+        const length = sourceLength(c.pages);
+        const chapters = includedSections(b).length;
+        const mode: Mode = existing || length > MAX_SOURCE_CHARS || (length > BOOK_SUGGEST_CHARS && chapters >= 2) ? "book" : "whole";
+        if (!cancelled) setStart({ contents: c, mode, book: b, existingBook: !!existing });
+      } catch (e) {
+        if (!cancelled) setStartError(`Couldn't read the document: ${e instanceof Error ? e.message : String(e)}`);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [needsStart, start, docPath, readContents]);
 
   /** Show and store a changed draft. */
   function update(next: SummaryDraft) {
@@ -114,29 +177,26 @@ export function SummaryPane({ params, containerApi }: IDockviewPanelProps<Summar
     saveDraft(next).catch((e) => setStatus(`Draft not saved: ${String(e)}`));
   }
 
-  async function sourcePages(): Promise<string[]> {
-    pages.current ??= await documentText(docPath);
-    return pages.current;
+  function updateBook(next: BookDraft) {
+    setBook(next);
+    saveBookDraft(next).catch((e) => setStatus(`Draft not saved: ${String(e)}`));
   }
 
   /** Write the first draft (no `feedback`) or revise the shown version. */
-  async function generate(base: SummaryDraft, feedbackText?: string) {
-    if (running) return;
-    setError(null);
+  async function generate(base: SummaryDraft, feedbackText?: string): Promise<boolean> {
+    if (writer.running) return false;
     setStatus(null);
-    setLimitReached(false);
-
     let messages: ChatMessage[];
     let system: string;
     try {
-      const text = await sourcePages();
+      const text = await readPages();
       const length = sourceLength(text);
       if (length < MIN_SOURCE_CHARS) {
         throw new Error("This PDF has almost no text to read. It may be a scan without a text layer.");
       }
       if (length > MAX_SOURCE_CHARS) {
         throw new Error(
-          `This document is too long to summarize in one go (${Math.round(length / 1000)}k characters; the limit is ${MAX_SOURCE_CHARS / 1000}k).`,
+          `This document is too long to summarize in one go (${Math.round(length / 1000)}k characters; the limit is ${MAX_SOURCE_CHARS / 1000}k). Summarize it chapter by chapter instead.`,
         );
       }
       const notes = base.includeHighlights ? await loadAnnotations(docPath).catch(() => null) : null;
@@ -149,82 +209,67 @@ export function SummaryPane({ params, containerApi }: IDockviewPanelProps<Summar
           ? [{ role: "user", content: request }]
           : revisionMessages(request, base.versions, base.current, feedbackText);
     } catch (e) {
-      setError({ kind: "source", message: e instanceof Error ? e.message : String(e) });
-      return;
+      writer.setError({ kind: "source", message: e instanceof Error ? e.message : String(e) });
+      return false;
     }
+    const version = await writer.write({ model: model ?? undefined, system, messages });
+    if (!version) return false;
+    const v = feedbackText === undefined ? version : { ...version, basedOn: base.current, feedback: feedbackText };
+    update({ ...base, versions: [...base.versions, v], current: base.versions.length });
+    return true;
+  }
 
-    let text = "";
-    let answerModel: string | undefined;
-    let stopReason: string | null = null;
-    setStreamed("");
-    const handle = ask({ model: model ?? undefined, system, messages }, (event) => {
-      if (event.type === "started") answerModel = event.model || undefined;
-      else if (event.type === "textDelta") {
-        text += event.text;
-        setStreamed(text);
-      } else if (event.type === "finished") stopReason = event.stopReason;
-    });
-    setRunning(handle);
+  /** Fix the book's chapters and wiki folder, pick up chapter pages already saved, and start writing. */
+  async function startBook(setup: BookDraft) {
+    setStatus(null);
     try {
-      await handle.done;
-      if (stopReason === "refusal") throw { kind: "refusal", message: "The model declined to write this summary." };
-      if (!text.trim()) throw { kind: "empty", message: "The model returned nothing. Try again." };
-      const version: SummaryVersion = {
-        text,
-        by: "ai",
-        at: nowIso(),
-        ...(feedbackText === undefined ? {} : { basedOn: base.current, feedback: feedbackText }),
-        ...(answerModel ? { model: answerModel } : {}),
-        ...(stopReason === "max_tokens"
-          ? { note: "Cut off at the length limit." }
-          : stopReason && stopReason !== "end_turn"
-            ? { note: `Incomplete (${stopReason}).` }
-            : {}),
-      };
-      update({ ...base, versions: [...base.versions, version], current: base.versions.length });
-      setFeedback("");
-    } catch (err) {
-      const e = toLlmError(err);
-      setError(e);
-      if (e.kind === USAGE_LIMIT) setLimitReached(true);
-      if (SIGN_IN_ERRORS.has(e.kind)) checkAuth();
-    } finally {
-      setStreamed(null);
-      setRunning(null);
+      const page = await findSourcePage(docPath).catch(() => null);
+      const folder = page && isBookOverview(page.text) ? page.path.slice(0, page.path.lastIndexOf("/")) : undefined;
+      const d = assignPaths({ ...setup, meta: { ...setup.meta, title: setup.meta.title.trim() } }, await sourceNames(), folder);
+      d.sections = await Promise.all(
+        d.sections.map(async (s) => {
+          const text = s.path ? await readTextFileOpt(s.path).catch(() => null) : null;
+          if (!s.path || !text || str(parseFrontMatter(text).front.type) !== "source-section") return s;
+          return {
+            ...s,
+            versions: [{ text: sectionPageToDraft(text), by: "wiki" as const, at: nowIso() }],
+            current: 0,
+            saved: { path: s.path, version: 0, digest: await digest(text) },
+          };
+        }),
+      );
+      d.selected = nextUnwritten(d) ?? includedSections(d)[0].index;
+      await saveBookDraft(d);
+      setWriteOnOpen(true);
+      setBook(d);
+    } catch (e) {
+      setStartError(`Couldn't start: ${e instanceof Error ? e.message : String(e)}`);
     }
   }
 
-  function revise(e: FormEvent) {
-    e.preventDefault();
-    if (draft && feedback.trim()) void generate(draft, feedback.trim());
-  }
-
-  function saveEdit() {
-    if (!draft || editing === null) return;
-    const shown = draft.versions[draft.current];
-    if (editing.trim() && editing !== shown?.text) {
-      const version: SummaryVersion = { text: editing, by: "edit", basedOn: draft.current, at: nowIso() };
-      update({ ...draft, versions: [...draft.versions, version], current: draft.versions.length });
-      setStatus(null);
-    }
-    setEditing(null);
-  }
-
-  async function startOver() {
-    if (!draft) return;
+  async function discard() {
     const ok = await confirmDialog(
-      draft.saved
-        ? "Discard this draft and its versions? The saved wiki page is kept."
-        : "Discard this summary and its versions? It hasn't been saved to the wiki.",
+      book
+        ? "Discard the chapter drafts and their versions? Chapters saved to the wiki are kept."
+        : draft?.saved
+          ? "Discard this draft and its versions? The saved wiki page is kept."
+          : "Discard this summary and its versions? It hasn't been saved to the wiki.",
       { title: "Discard draft", kind: "warning", okLabel: "Discard", cancelLabel: "Cancel" },
     ).catch(() => false);
     if (!ok) return;
-    running?.cancel();
-    await deleteDraft(docPath).catch(() => {});
-    setDraft(await draftFromWiki(docPath));
-    setError(null);
+    writer.running?.cancel();
+    writer.setError(null);
     setStatus(null);
-    setEditing(null);
+    setWriteOnOpen(false);
+    setStart(null);
+    if (book) {
+      await deleteBookDraft(docPath).catch(() => {});
+      setBook(null);
+      setDraft(null);
+    } else {
+      await deleteDraft(docPath).catch(() => {});
+      setDraft(await draftFromWiki(docPath));
+    }
   }
 
   async function saveToWiki() {
@@ -237,7 +282,8 @@ export function SummaryPane({ params, containerApi }: IDockviewPanelProps<Summar
       const page = parseDraft(version.text);
       if (!page.body.trim()) throw new Error("This version has no text to save.");
       const title = page.meta.title || page.body.match(/^# (.+)$/m)?.[1] || docPath;
-      const path = draft.saved?.path ?? (await findSourcePage(docPath))?.path ?? (await newSourcePagePath(title));
+      const found = await findSourcePage(docPath);
+      const path = draft.saved?.path ?? (found && !isBookOverview(found.text) ? found.path : await newSourcePagePath(title));
       const existing = await readTextFileOpt(path);
       if (existing !== null && (!draft.saved || draft.saved.path !== path || (await digest(existing)) !== draft.saved.digest)) {
         const ok = await confirmDialog(
@@ -248,8 +294,8 @@ export function SummaryPane({ params, containerApi }: IDockviewPanelProps<Summar
       }
       const now = nowIso();
       const created = existing ? str(parseFrontMatter(existing).front.created) || now : now;
-      const model = [...versionChain(draft.versions, draft.current)].reverse().find((v) => v.model)?.model;
-      const text = wikiPageText(page, { source: docPath, created, updated: now, model });
+      const usedModel = [...versionChain(draft.versions, draft.current)].reverse().find((v) => v.model)?.model;
+      const text = wikiPageText(page, { source: docPath, created, updated: now, model: usedModel });
       await writeWikiPage(path, text);
       update({ ...draft, saved: { path, version: draft.current, digest: await digest(text) } });
       filesChanged.emit([path, INDEX_FILE]);
@@ -262,15 +308,14 @@ export function SummaryPane({ params, containerApi }: IDockviewPanelProps<Summar
   }
 
   const onWikiLink = useCallback((target: string) => openWikiLink(containerApi, target), [containerApi]);
-
-  const shown = draft?.versions[draft.current];
-  const page = useMemo(() => (shown ? parseDraft(shown.text) : null), [shown]);
-  const body = useMemo(() => (page ? splitTitle(page.body) : null), [page]);
-  const blocks = useMemo(() => {
-    if (!draft || !shown || !body || shown.basedOn === undefined) return null;
-    const before = draft.versions[shown.basedOn];
-    return before ? changedBlocks(splitTitle(parseDraft(before.text).body).rest, body.rest) : null;
-  }, [draft, shown, body]);
+  const onOpenFile = useCallback((path: string) => openFile(containerApi, path), [containerApi]);
+  const parseWhole = useCallback(
+    (text: string) => {
+      const p = parseDraft(text);
+      return { title: pageTitle(p.meta, p.body, docPath), body: p.body };
+    },
+    [docPath],
+  );
 
   if (!loaded || !auth) return <div className="pane pane-message muted">Loading…</div>;
 
@@ -282,30 +327,108 @@ export function SummaryPane({ params, containerApi }: IDockviewPanelProps<Summar
       purpose="write summaries"
     />
   );
-  const isSaved = !!draft?.saved && draft.saved.version === draft.current;
+  const footer = (
+    <div className="chat-footer">
+      <ModelPicker models={models} model={model} onChange={setModel} />
+      <UsageFooter />
+    </div>
+  );
 
-  // No draft yet: choose a focus and write the first one.
-  if (!draft || draft.versions.length === 0) {
-    const d = draft ?? newDraft(docPath);
+  if (book) {
     return (
       <div className="summary-pane">
         {welcome && <PlanWelcome onClose={closeWelcome} />}
-        {streamed !== null ? (
-          <StreamingView text={streamed} onStop={() => running?.cancel()} onWikiLink={onWikiLink} />
+        <BookView
+          draft={book}
+          update={updateBook}
+          docPath={docPath}
+          writer={writer}
+          model={model}
+          pages={readPages}
+          writeOnOpen={writeOnOpen}
+          signIn={signInNeeded}
+          onDiscard={() => void discard()}
+          onWikiLink={onWikiLink}
+          onOpenFile={onOpenFile}
+        />
+        {status && <div className="chat-error summary-status">{status}</div>}
+        {footer}
+      </div>
+    );
+  }
+
+  // No draft yet: choose one page or one per chapter, and write the first.
+  if (!draft || draft.versions.length === 0) {
+    const d = draft ?? newDraft(docPath);
+    const length = start ? sourceLength(start.contents.pages) : 0;
+    const tooLong = length > MAX_SOURCE_CHARS;
+    const chapters = start ? includedSections(start.book).length : 0;
+    const problem = start && start.mode === "book" ? setupProblem(start.book, start.contents.pages) : null;
+    return (
+      <div className="summary-pane">
+        {welcome && <PlanWelcome onClose={closeWelcome} />}
+        {writer.streamed !== null ? (
+          <StreamingView text={writer.streamed} onStop={() => writer.running?.cancel()} onWikiLink={onWikiLink} />
         ) : (
           <div className="summary-start">
             <h2>Summarize for the wiki</h2>
             <p className="muted">
-              The AI reads <strong>{docPath}</strong> and writes a summary page. You can ask for changes before it's
-              saved to <code>wiki/sources/</code>.
+              The AI reads <strong>{docPath}</strong> and writes a summary. You can ask for changes before it's saved to{" "}
+              <code>wiki/sources/</code>.
             </p>
-            {signInNeeded || (
+            {!start ? (
+              startError ? <div className="chat-error summary-status">{startError}</div> : <p className="muted">Reading the document…</p>
+            ) : (
               <form
                 onSubmit={(e) => {
                   e.preventDefault();
-                  void generate(d);
+                  if (start.mode === "book") {
+                    if (!problem) void startBook({ ...start.book, focus: d.focus, includeHighlights: d.includeHighlights });
+                  } else void generate(d);
                 }}
               >
+                <fieldset className="summary-mode">
+                  <label className="checkbox">
+                    <input
+                      type="radio"
+                      name="mode"
+                      checked={start.mode === "whole"}
+                      disabled={tooLong}
+                      onChange={() => setStart({ ...start, mode: "whole" })}
+                    />
+                    <span>
+                      One page for the whole document
+                      {tooLong && (
+                        <span className="muted"> · too long for one request ({Math.round(length / 1000)}k characters)</span>
+                      )}
+                    </span>
+                  </label>
+                  <label className="checkbox">
+                    <input type="radio" name="mode" checked={start.mode === "book"} onChange={() => setStart({ ...start, mode: "book" })} />
+                    <span>
+                      One page per chapter
+                      <span className="muted">
+                        {" "}
+                        ·{" "}
+                        {start.contents.outline.length
+                          ? `${chapters} chapters from the PDF's bookmarks`
+                          : "no bookmarks; you mark where chapters start"}
+                        {length > BOOK_SUGGEST_CHARS && !tooLong ? " · suggested for a document this long" : ""}
+                        {start.existingBook ? " · continues the chapters already in the wiki" : ""}
+                      </span>
+                    </span>
+                  </label>
+                </fieldset>
+
+                {start.mode === "book" && (
+                  <BookSetup
+                    draft={start.book}
+                    pages={start.contents.pages}
+                    outline={start.contents.outline}
+                    onChange={(b) => setStart({ ...start, book: b })}
+                  />
+                )}
+
                 <label>
                   Focus <span className="muted">(optional)</span>
                   <input
@@ -324,162 +447,71 @@ export function SummaryPane({ params, containerApi }: IDockviewPanelProps<Summar
                   />
                   Cover the passages I highlighted{highlightCount ? ` (${highlightCount})` : " (none yet)"}
                 </label>
-                <div className="row">
-                  <button type="submit" className="primary">
-                    Write summary
-                  </button>
-                  <button type="button" className="link-button" onClick={() => openSettings(containerApi)}>
-                    Summary instructions…
-                  </button>
-                </div>
+                {signInNeeded || (
+                  <div className="row">
+                    <button type="submit" className="primary" disabled={!!problem}>
+                      {start.mode === "book" ? "Start with the first chapter" : "Write summary"}
+                    </button>
+                    <button type="button" className="link-button" onClick={() => openSettings(containerApi)}>
+                      Summary instructions…
+                    </button>
+                  </div>
+                )}
+                {problem && <p className="muted">{problem}</p>}
               </form>
             )}
-            {error && <ErrorLine error={error} />}
-            {limitReached && <UsageLimit />}
+            {writer.error && <ErrorLine error={writer.error} />}
+            {writer.limitReached && <UsageLimit />}
           </div>
         )}
-        <div className="chat-footer">
-          <ModelPicker models={models} model={model} onChange={setModel} />
-          <UsageFooter />
-        </div>
+        {footer}
       </div>
     );
   }
 
+  const isSaved = !!draft.saved && draft.saved.version === draft.current;
+  const shownMeta = parseDraft(draft.versions[draft.current]?.text ?? "").meta;
+
   return (
     <div className="summary-pane">
       {welcome && <PlanWelcome onClose={closeWelcome} />}
-      <div className="summary-header">
-        <button
-          className="icon-button"
-          aria-label="Previous version"
-          disabled={draft.current === 0 || !!running || editing !== null}
-          onClick={() => setDraft({ ...draft, current: draft.current - 1 })}
-        >
-          ◀
-        </button>
-        <span className="summary-version" title={shown ? versionLabel(shown, draft) : undefined}>
-          Version {draft.current + 1} of {draft.versions.length}
-        </span>
-        <button
-          className="icon-button"
-          aria-label="Next version"
-          disabled={draft.current >= draft.versions.length - 1 || !!running || editing !== null}
-          onClick={() => setDraft({ ...draft, current: draft.current + 1 })}
-        >
-          ▶
-        </button>
-        {shown && <span className="summary-origin muted">{versionLabel(shown, draft)}</span>}
-        <span className="spacer" />
-        {blocks && streamed === null && editing === null && (
-          <label className="checkbox small">
-            <input type="checkbox" checked={showChanges} onChange={(e) => setShowChanges(e.target.checked)} />
-            Show changes
-          </label>
-        )}
-        <button onClick={() => setEditing(shown?.text ?? "")} disabled={!!running || editing !== null}>
-          Edit
-        </button>
-        <button onClick={() => void startOver()} disabled={!!running}>
-          Discard
-        </button>
-      </div>
-
-      {streamed !== null ? (
-        <StreamingView text={streamed} onStop={() => running?.cancel()} onWikiLink={onWikiLink} />
-      ) : editing !== null ? (
-        <div className="summary-edit">
-          <textarea value={editing} onChange={(e) => setEditing(e.target.value)} spellCheck autoFocus />
-          <div className="row">
-            <button className="primary" onClick={saveEdit}>
-              Keep edits
-            </button>
-            <button onClick={() => setEditing(null)}>Cancel</button>
-          </div>
-        </div>
-      ) : (
-        page &&
-        body && (
-          <div className="summary-body">
-            <article className="reading">
-              <div className="kicker">Source summary</div>
-              <h1 className="reading-title">{body.title ?? pageTitle(page.meta, page.body, docPath)}</h1>
-              <PageMetaLine meta={page.meta} docPath={docPath} onOpenSource={() => openFile(containerApi, docPath)} />
-              {shown?.note && <div className="chat-note">{shown.note}</div>}
-              {blocks && showChanges ? (
-                blocks.map((b, i) => (
-                  <div key={i} className={b.changed ? "summary-block changed" : "summary-block"}>
-                    <Markdown text={b.block} onWikiLink={onWikiLink} />
-                  </div>
-                ))
-              ) : (
-                <Markdown text={body.rest} onWikiLink={onWikiLink} />
-              )}
-            </article>
-          </div>
-        )
-      )}
-
-      {error && <ErrorLine error={error} />}
-      {limitReached && <UsageLimit />}
-
-      {editing === null &&
-        (signInNeeded || (
-          <form className="chat-input" onSubmit={revise}>
-            <textarea
-              value={feedback}
-              rows={2}
-              placeholder="Ask for changes… e.g. “shorter”, “explain equation 1 step by step”"
-              disabled={!!running}
-              onChange={(e) => setFeedback(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) revise(e);
-              }}
-            />
-            <button type="submit" disabled={!!running || !feedback.trim()}>
-              Revise
-            </button>
-          </form>
-        ))}
-
-      <div className="summary-actions">
-        {status && (
-          <span className={status.startsWith("Saved") ? "ok" : "error"}>
-            {status}
-            {status.startsWith("Saved") && draft.saved && (
-              <>
-                {" "}
-                <button className="link-button" onClick={() => openFile(containerApi, draft.saved!.path)}>
-                  Open
-                </button>
-              </>
-            )}
-          </span>
-        )}
-        <span className="spacer" />
-        {draft.saved && !status && (
-          <button className="link-button" onClick={() => openFile(containerApi, draft.saved!.path)}>
-            {draft.saved.path}
+      <DraftView
+        item={draft}
+        parse={parseWhole}
+        kicker="Source summary"
+        byline={<PageMetaLine meta={shownMeta} docPath={docPath} onOpenSource={() => onOpenFile(docPath)} />}
+        writer={writer}
+        onSelect={(i) => setDraft({ ...draft, current: i })}
+        onKeepEdit={(text) => {
+          update({ ...draft, versions: [...draft.versions, editVersion(draft, text)], current: draft.versions.length });
+          setStatus(null);
+        }}
+        onRevise={(feedback) => generate(draft, feedback)}
+        onWikiLink={onWikiLink}
+        headerExtra={
+          <button onClick={() => void discard()} disabled={!!writer.running}>
+            Discard
           </button>
-        )}
-        <button className="primary" onClick={() => void saveToWiki()} disabled={saving || !!running || editing !== null || isSaved}>
-          {isSaved ? "Saved to wiki" : draft.saved ? "Update wiki page" : "Save to wiki"}
-        </button>
-      </div>
-      <div className="chat-footer">
-        <ModelPicker models={models} model={model} onChange={setModel} />
-        <UsageFooter />
-      </div>
+        }
+        signIn={signInNeeded}
+        actions={
+          <div className="summary-actions">
+            {status && <SaveStatus status={status} path={draft.saved?.path} onOpen={onOpenFile} />}
+            <span className="spacer" />
+            {draft.saved && !status && (
+              <button className="link-button" onClick={() => onOpenFile(draft.saved!.path)}>
+                {draft.saved.path}
+              </button>
+            )}
+            <button className="primary" onClick={() => void saveToWiki()} disabled={saving || !!writer.running || isSaved}>
+              {isSaved ? "Saved to wiki" : draft.saved ? "Update wiki page" : "Save to wiki"}
+            </button>
+          </div>
+        }
+      />
+      {footer}
     </div>
   );
-}
-
-function versionLabel(v: SummaryVersion, draft: SummaryDraft): string {
-  const saved = draft.saved && draft.versions[draft.saved.version] === v ? " · saved" : "";
-  if (v.by === "wiki") return `From the wiki${saved}`;
-  if (v.by === "edit") return `Edited by hand${saved}`;
-  if (v.feedback) return `Revised: “${v.feedback.length > 60 ? `${v.feedback.slice(0, 60)}…` : v.feedback}”${saved}`;
-  return `First draft${saved}`;
 }
 
 function PageMetaLine({
@@ -503,36 +535,6 @@ function PageMetaLine({
       <button className="link-button source-link" onClick={onOpenSource} title={docPath}>
         {docPath.split("/").pop()}
       </button>
-    </div>
-  );
-}
-
-function StreamingView({ text, onStop, onWikiLink }: { text: string; onStop: () => void; onWikiLink: (t: string) => void }) {
-  const { body } = parseDraft(text);
-  const { title, rest } = splitTitle(body);
-  return (
-    <div className="summary-body streaming">
-      <article className="reading">
-        <div className="kicker">
-          Writing… <button className="link-button" onClick={onStop}>Stop</button>
-        </div>
-        {title && <h1 className="reading-title">{title}</h1>}
-        {body ? <Markdown text={rest} onWikiLink={onWikiLink} /> : <p className="muted">Reading the document…</p>}
-      </article>
-    </div>
-  );
-}
-
-function ErrorLine({ error }: { error: LlmError }) {
-  if (error.kind === "cancelled") return <div className="chat-note summary-status">Stopped.</div>;
-  return <div className="chat-error summary-status">{error.message}</div>;
-}
-
-function UsageLimit() {
-  return (
-    <div className="usage-limit">
-      <strong>Usage limit reached</strong>
-      <button onClick={() => void openManageUsage()}>Manage usage</button>
     </div>
   );
 }

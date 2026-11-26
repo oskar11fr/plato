@@ -85,11 +85,41 @@ a page citation scrolls the PDF to that page. Drafts live in
 `.reader/drafts/<document>/summary.json` until discarded; moving a PDF moves
 its draft and updates links to it throughout `wiki/`.
 
+### Books: one page per chapter
+
+For a long document (over ~150k characters, or over the 400k one-request
+limit) the summary pane suggests **One page per chapter**. The chapters come
+from the PDF's bookmarks, at the level that gives chapters of a readable size;
+before starting you check the book's title, authors and year, pick the bookmark
+level, include or exclude sections (covers, contents, index and near-empty
+pages start out excluded), rename them, change start pages, or add sections
+by hand for a PDF without bookmarks. The list is fixed once writing starts.
+
+Chapters are written one at a time, in order. Each request carries the book's
+contents (with links to the other chapters' pages), the TL;DRs of the
+chapters before it, the chapter's own pages and your highlights in them.
+Review it like any summary (versions, revisions, hand edits), then
+**Accept and save** writes it to the wiki and offers **Write next**:
+
+```
+wiki/sources/<book-slug>/00-overview.md     book details and contents (rewritten by the app)
+wiki/sources/<book-slug>/01-<chapter>.md    one page per chapter
+```
+
+A chapter page has `type: "source-section"`, `title`, `tldr`, `book`,
+`chapter`, `pages: [first, last]` and `source: "[[book.pdf#page=N]]"`, and a
+line under its title linking to the overview. `wiki/index.md` lists the book
+with its chapters under it. The draft is `.reader/drafts/<document>/book.json`;
+discarding it keeps the saved chapters, and starting again for the same book
+picks them up from the wiki.
+
 What a summary should contain is a *skill*: `src/skills/summarize-source/SKILL.md`
 (Agent Skills layout: `name` and `description` front matter, then the
-instructions). Settings → **Summary instructions** edits it per workspace
-(saved to `.reader/skills/summarize-source/SKILL.md`). The page format the app
-parses is fixed in `src/lib/summary.ts`, so custom instructions can't break it.
+instructions); chapters use `src/skills/summarize-section/SKILL.md`. Settings →
+**Summary instructions** and **Chapter instructions** edit them per workspace
+(saved to `.reader/skills/<name>/SKILL.md`). The page formats the app parses are
+fixed in `src/lib/summary.ts` and `src/lib/book.ts`, so custom instructions
+can't break them.
 
 ## Appearance
 
@@ -106,6 +136,6 @@ colours are tokens at the top of `src/App.css`.
   provider and `openai/auth.rs` the Sign in with ChatGPT flow
 - `src/pdf/` – pdf.js viewer, highlight anchoring (quote + prefix/suffix + rects)
 - `src/lib/chats.ts` – chat file format, listing, saving
-- `src/lib/summary.ts`, `src/lib/wiki.ts` – summary prompts, drafts, wiki pages and index
+- `src/lib/summary.ts`, `src/lib/book.ts`, `src/lib/wiki.ts` – summary and chapter prompts, drafts, wiki pages and index
 - `src/skills/` – built-in skills (instructions for AI tasks)
 - `src/panes/` – dockview pane types (PDF, text, chat, summary, settings)
