@@ -1,6 +1,7 @@
 import type { IDockviewPanelProps } from "dockview-react";
 import type { FunctionComponent } from "react";
 import { ChatPane } from "./ChatPane";
+import { GraphPane } from "./GraphPane";
 import { LintPane } from "./LintPane";
 import { PdfPane } from "./PdfPane";
 import { SettingsPane } from "./SettingsPane";
@@ -16,4 +17,5 @@ export const paneComponents: Record<string, FunctionComponent<IDockviewPanelProp
   settings: SettingsPane,
   summary: SummaryPane,
   lint: LintPane,
+  graph: GraphPane,
 };

@@ -105,3 +105,13 @@ export function openLint(api: DockviewApi) {
   }
   api.addPanel({ id: "lint", component: "lint", title: "Lint wiki" });
 }
+
+/** Open (or focus) the graph of the wiki. */
+export function openGraph(api: DockviewApi) {
+  const existing = api.getPanel("graph");
+  if (existing) {
+    existing.api.setActive();
+    return;
+  }
+  api.addPanel({ id: "graph", component: "graph", title: "Wiki graph" });
+}

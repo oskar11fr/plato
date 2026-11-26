@@ -21,7 +21,7 @@ import {
 } from "./lib/backend";
 import { filesChanged } from "./lib/bus";
 import { setWorkspaceFiles } from "./lib/wikilinks";
-import { isOpenable, openChat, openFile, openLint, openSettings, openSummary, paneComponents, type ChatParams } from "./panes";
+import { isOpenable, openChat, openFile, openGraph, openLint, openSettings, openSummary, paneComponents, type ChatParams } from "./panes";
 import "./App.css";
 
 const LAST_WORKSPACE_KEY = "plato.lastWorkspace";
@@ -349,9 +349,14 @@ export default function App() {
                   Use workspace root
                 </button>
               )}
-              <button className="lint-wiki" onClick={() => api && openLint(api)} title="Check the wiki's links and suggest new ones">
-                Lint wiki
-              </button>
+              <div className="sidebar-wiki">
+                <button className="lint-wiki" onClick={() => api && openGraph(api)} title="Show the wiki's pages and links as a graph">
+                  Wiki graph
+                </button>
+                <button className="lint-wiki" onClick={() => api && openLint(api)} title="Check the wiki's links and suggest new ones">
+                  Lint wiki
+                </button>
+              </div>
             </footer>
           </>
         ) : (

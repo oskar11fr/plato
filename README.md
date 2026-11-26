@@ -155,6 +155,15 @@ writes full paths in the pages it generates; Obsidian reads those too.
   and **Apply** them. Links are written as bare names, or as paths when a
   name is shared. Each apply adds an entry to `wiki/log.md`.
 
+**Wiki graph** (next to Lint wiki) shows the wiki as a graph: a node per
+page, colored by kind (summaries, books, concepts, other pages) and sized by
+how many pages it links with, and an edge per pair of linked pages. Pages
+linked but not written yet show as hollow rings (toggle them in the
+toolbar). Hover a page to light up its neighbors, click it to open it, drag
+to move it; scroll to zoom, drag the background to pan, and double-click
+the background (or **Fit**) to see everything. **Find a page** dims the
+rest; Enter centers the first match. The graph updates when pages are saved.
+
 `.reader/lint.json` remembers which pages were checked against which pages,
 so the next lint sends only new and changed pages, and unchanged pages only
 for links to pages added since. Books' `00-overview.md` pages aren't linked,
@@ -178,5 +187,6 @@ colours are tokens at the top of `src/App.css`.
 - `src/lib/chats.ts` – chat file format, listing, saving
 - `src/lib/summary.ts`, `src/lib/book.ts`, `src/lib/wiki.ts` – summary and chapter prompts, drafts, wiki pages and index
 - `src/lib/lint.ts`, `src/lib/wikilinks.ts` – wiki checks, link suggestions, and Obsidian-style link resolution
+- `src/lib/graph.ts`, `src/panes/GraphPane.tsx` – the wiki graph (d3-force layout, drawn on a canvas)
 - `src/skills/` – built-in skills (instructions for AI tasks)
 - `src/panes/` – dockview pane types (PDF, text, chat, summary, settings)
